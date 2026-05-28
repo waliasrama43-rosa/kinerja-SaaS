@@ -37,8 +37,71 @@ function setupStrukturDatabaseSaaS() {
     "Pengaturan": [["Kunci", "Nilai"], ["BOT_TOKEN", "8892439073:AAE-BYuT8-bEOBlYjMugLK6sCiugPVki-j0"], ["ADMIN_CHAT_ID", "927597163"]],
     "Client_SaaS": [["Chat_ID", "Nama_Pendaftar", "Folder_Root_ID", "Status_Akses", "Masa_Aktif", "Limit_Harian", "Total_Laporan", "Catatan_Admin", "State_Sesi", "RHK_Terpilih", "Tanggal_Terpilih", "Hari_Terpilih", "Current_Placeholder_Index", "Foto_Count"]],
     "RHK_Config": [["Chat_ID", "RHK_ID", "Label_Menu", "Emoji", "Template_ID", "Folder_PDF_ID", "Folder_Foto_ID", "Min_Foto", "Max_Foto", "Urutan"]],
-    "Kamus_Placeholder": [["Kode_Placeholder", "Pertanyaan_Bot"], ["LOKASI", "Di mana lokasi pelaksanaan kegiatan Anda hari ini, Pak/Bu? 📍"], ["URAIAN", "Mohon ceritakan uraian singkat mengenai jalan dan poin kegiatan tersebut: 📝"], ["TUJUAN", "Apa target utama atau tujuan yang ingin dicapai dari agenda ini? 🎯"], ["PIHAK", "Siapa saja pihak, rekan sejawat, atau partisipan yang terlibat di lokasi? 👥"], ["TL", "Bagaimana rencana Tindak Lanjut (TL) ke depan pasca kegiatan selesai? 🚀"], ["KESIMPULAN", "Tuliskan kesimpulan akhir atau ringkasan hasil kegiatan Anda: 📊"]]
+    "Kamus_Placeholder": [["Kode_Placeholder", "Pertanyaan_Bot"], ["LOKASI", "Di mana lokasi pelaksanaan kegiatan Anda hari ini, Pak/Bu? 📍"], ["URAIAN", "Mohon ceritakan uraian singkat mengenai jalan dan poin kegiatan tersebut: 📝"], ["TUJUAN", "Apa target utama atau tujuan yang ingin dicapai dari agenda ini? 🎯"], ["PIHAK", "Siapa saja pihak, rekan sejawat, atau partisipan yang terlibat di lokasi? 👥"], ["TL", "Bagaimana rencana Tindak Lanjut (TL) ke depan pasca kegiatan selesai? 🚀"], ["KESIMPULAN", "Tuliskan kesimpulan akhir atau ringkasan hasil kegiatan Anda: 📊"]],
+
+    // ================================================================
+    // SHEET BARU: Admin_Commands — Pusat Konfigurasi Perintah Admin
+    // ================================================================
+    // Cara penggunaan (TANPA mengubah kode apapun):
+    //   1. Tambahkan baris baru di sheet ini.
+    //   2. Isi kolom sesuai panduan header di bawah.
+    //   3. Bot langsung mengenali perintah baru saat berikutnya dijalankan.
+    //
+    // Kolom:
+    //   Perintah       : Teks perintah lengkap yg diketik admin, cth: /admin info_server
+    //   Tipe           : BALAS_TEKS | BROADCAST | KIRIM_KE_USER
+    //   Parameter      : (opsional) Untuk KIRIM_KE_USER isi {chatId} sebagai placeholder
+    //   Isi_Pesan      : Teks yang akan dikirim (mendukung Markdown Telegram)
+    //   Aktif          : TRUE / FALSE — nonaktifkan perintah tanpa menghapus baris
+    //   Deskripsi      : Keterangan singkat untuk memudahkan Anda sebagai pengingat
+    // ================================================================
+    "Admin_Commands": [
+      ["Perintah", "Tipe", "Parameter", "Isi_Pesan", "Aktif", "Deskripsi"],
+
+      // ── CONTOH 1: Balas pesan informasi statis ke Admin ──────────────
+      ["/admin info_kontak",
+       "BALAS_TEKS",
+       "",
+       "📞 *Kontak Dukungan Teknis Platform*\n\n▪️ WhatsApp Admin: wa.me/6285100062524\n▪️ Email: waliasrama.43@gmail.com\n▪️ Telegram: @Septian_DK\n\n_Jam operasional: Senin–Jumat, 08.00–17.00 WIB_",
+       "TRUE",
+       "Tampilkan info kontak teknis platform ke admin"],
+
+      // ── CONTOH 2: Broadcast pengumuman khusus ke semua klien AKTIF ──
+      ["/admin umumkan_libur",
+       "BROADCAST",
+       "",
+       "🎉 *PENGUMUMAN RESMI PLATFORM RHK* 🎉\n\nDengan hormat, kami informasikan bahwa layanan bot akan *libur sementara* pada Hari Raya Nasional. Laporan tetap dapat dikerjakan setelah layanan aktif kembali. Terima kasih atas pengertiannya! 🙏",
+       "TRUE",
+       "Broadcast pengumuman libur ke semua klien aktif"],
+
+      // ── CONTOH 3: Kirim pesan pribadi ke satu klien berdasarkan input ─
+      // Penggunaan: /admin teguran 927597163
+      // Bot akan mengganti {chatId} dengan angka setelah perintah
+      ["/admin teguran",
+       "KIRIM_KE_USER",
+       "{chatId}",
+       "⚠️ *Pemberitahuan Khusus dari Admin* ⚠️\n\nYth. Bapak/Ibu,\nAdmin mendeteksi adanya aktivitas yang perlu dikonfirmasi pada akun Anda. Mohon segera hubungi Admin untuk klarifikasi lebih lanjut. Terima kasih.",
+       "TRUE",
+       "Kirim pesan teguran ke klien berdasarkan Chat ID"],
+
+      // ── CONTOH 4: Broadcast promosi/penawaran perpanjangan ───────────
+      ["/admin promo_akhir_bulan",
+       "BROADCAST",
+       "",
+       "🛍️ *PROMO AKHIR BULAN SPESIAL!* 🛍️\n\nDapatkan diskon eksklusif perpanjangan paket premium bulan ini! Ketik /bayar sekarang untuk melihat penawaran terbatas kami. Jangan sampai terlewat ya Pak/Bu! 🥰",
+       "TRUE",
+       "Broadcast promo perpanjangan paket akhir bulan"],
+
+      // ── CONTOH 5: Balasan info teknis server (dinonaktifkan/FALSE) ──
+      ["/admin cek_quota_server",
+       "BALAS_TEKS",
+       "",
+       "🖥️ *Status Quota Server GAS*\n\n▪️ UrlFetch: 20.000 req/hari\n▪️ Drive Baca/Tulis: 750 MB/hari\n▪️ Trigger Waktu: Aktif (00:01 WIB)\n\n_Pantau log detail di: Google Cloud Console > Apps Script_",
+       "FALSE",
+       "Tampilkan info teknis quota Google Apps Script (nonaktif)"]
+    ]
   };
+
   for (var sheetName in templateSheets) {
     if (!ss.getSheetByName(sheetName)) {
       var sheet = ss.insertSheet(sheetName);
@@ -46,6 +109,13 @@ function setupStrukturDatabaseSaaS() {
       if (templateSheets[sheetName].length > 1) sheet.getRange(2, 1, templateSheets[sheetName].length - 1, templateSheets[sheetName][0].length).setValues(templateSheets[sheetName].slice(1));
       sheet.autoResizeColumns(1, templateSheets[sheetName][0].length);
     }
+  }
+
+  // Warnai header sheet Admin_Commands agar mudah dibaca
+  var acSheet = ss.getSheetByName("Admin_Commands");
+  if (acSheet) {
+    acSheet.getRange(1, 1, 1, 6).setBackground("#1a73e8").setFontColor("#ffffff").setFontWeight("bold");
+    acSheet.setFrozenRows(1);
   }
 }
 
