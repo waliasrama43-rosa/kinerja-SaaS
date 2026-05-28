@@ -1,245 +1,830 @@
 // ====================================================================
-// FILE 05: COMMAND CENTER KENDALI OPERASIONAL ADMIN SAAS (REVISI V3)
+// FILE 05: COMMAND CENTER ADMIN SAAS (REVISI V5)
 // ====================================================================
 
 function prosesFiturAdminSaaS(update, config) {
   var chatId = update.message.chat.id.toString();
-  var text = update.message.text ? update.message.text.trim() : "";
+  var text   = update.message.text ? update.message.text.trim() : "";
 
+  // ── /admin broadcast [pesan] ──────────────────────────────────────
   if (text.indexOf("/admin broadcast ") === 0) {
     var isiPesan = text.replace("/admin broadcast ", "");
     var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Client_SaaS");
-    var data = sheet.getDataRange().getValues();
+    var data  = sheet.getDataRange().getValues();
     var sukses = 0;
     for (var i = 1; i < data.length; i++) {
       if (data[i][3] === "AKTIF") {
-        kirimPesanSaaS(data[i][0].toString(), "📢 *PENGUMUMAN RESMI PLATFORM RHK:* \n\n" + isiPesan, null, config.BOT_TOKEN);
+        kirimPesanSaaS(data[i][0].toString(),
+          "📢 *PENGUMUMAN PLATFORM KINERJA RHK*\n\n" + isiPesan, null, config.BOT_TOKEN);
         sukses++;
+        Utilities.sleep(100);
       }
     }
-    kirimPesanSaaS(chatId, "🚀 Berhasil menyebarkan pesan broadcast kepada *" + sukses + "* klien premium aktif!", null, config.BOT_TOKEN);
+    kirimPesanSaaS(chatId,
+      "✅ Broadcast terkirim ke *" + sukses + "* klien aktif.", null, config.BOT_TOKEN);
     return true;
   }
 
+  // ── /admin blokir [ID] [alasan] ───────────────────────────────────
   if (text.indexOf("/admin blokir ") === 0) {
     var params = text.split(" ");
     if (params.length >= 3) {
-      var targetId = params[1]; var alasan = text.replace("/admin blokir " + targetId + " ", "");
-      perbaruiKolomKlien(targetId, "Status_Akses", "NONAKTIF");
+      var targetId = params[2];
+      var alasan   = params.slice(3).join(" ") || "Tidak ada alasan tercatat.";
+      perbaruiKolomKlien(targetId, "Status_Akses",  "NONAKTIF");
       perbaruiKolomKlien(targetId, "Catatan_Admin", "Blokir: " + alasan);
-      kirimPesanSaaS(chatId, "🔒 Akun ID `" + targetId + "` berhasil dinonaktifkan.", null, config.ADMIN_CHAT_ID);
-      kirimPesanSaaS(targetId, "🔔 Pemberitahuan: Akses bot Anda telah ditangguhkan sepihak oleh Admin dengan alasan: *" + alasan + "*.", null, config.BOT_TOKEN);
+      kirimPesanSaaS(chatId,
+        "🔒 Akun `" + targetId + "` dinonaktifkan.\n📝 Alasan: _" + alasan + "_",
+        null, config.BOT_TOKEN);
+      var kbBlokir = {"inline_keyboard": [
+        [{"text": "💎 Perpanjang Langganan", "callback_data": "SHORTCUT_BAYAR"}],
+        [tombolHubungiAdminWA()]
+      ]};
+      kirimPesanSaaS(targetId,
+        "🔔 *Akses akun Anda telah ditangguhkan.*\n\nAlasan: *" + alasan + "*\n\n" +
+        "Hubungi Admin untuk informasi lebih lanjut.",
+        kbBlokir, config.BOT_TOKEN);
     } else {
-      kirimPesanSaaS(chatId, "💡 Gunakan pola: `/admin blokir [ID_Chat] [Alasan_Blokir]`", null, config.BOT_TOKEN);
+      kirimPesanSaaS(chatId,
+        "💡 Format: `/admin blokir [Chat_ID] [Alasan]`", null, config.BOT_TOKEN);
     }
     return true;
   }
 
+
+  // ── /admin aktifkan [ID] [bulan] ──────────────────────────────────
   if (text.indexOf("/admin aktifkan ") === 0) {
-    var targetAktifId = text.replace("/admin aktifkan ", "").trim();
-    var tglExp = new Date(); tglExp.setMonth(tglExp.getMonth() + 1);
-    perbaruiKolomKlien(targetAktifId, "Status_Akses", "AKTIF");
-    perbaruiKolomKlien(targetAktifId, "Masa_Aktif", tglExp);
-    kirimPesanSaaS(chatId, "✅ Sukses membuka gembok akun ID `" + targetAktifId + "`.", null, config.BOT_TOKEN);
+    var parts         = text.split(" ");
+    var targetAktifId = parts[2] ? parts[2].trim() : "";
+    var jmlBulan      = parts[3] ? parseInt(parts[3]) : 1;
+    if (!targetAktifId) {
+      kirimPesanSaaS(chatId,
+        "💡 Format: `/admin aktifkan [Chat_ID] [durasi_bulan]`\n" +
+        "Contoh: `/admin aktifkan 927597163 3`", null, config.BOT_TOKEN);
+      return true;
+    }
+    var klienAktif = cariAtauDaftarKlienSaaS(targetAktifId, "");
+    var tglExp = new Date();
+    if (klienAktif.Status_Akses === "AKTIF" && new Date(klienAktif.Masa_Aktif) > new Date()) {
+      tglExp = new Date(klienAktif.Masa_Aktif);
+    }
+    tglExp.setMonth(tglExp.getMonth() + jmlBulan);
+    perbaruiKolomKlien(targetAktifId, "Status_Akses",  "AKTIF");
+    perbaruiKolomKlien(targetAktifId, "Masa_Aktif",    tglExp);
+    perbaruiKolomKlien(targetAktifId, "Warning_Sent",  "");
+    var sapAktif = getSapaan(klienAktif.Nama_Pendaftar);
+    kirimPesanSaaS(chatId,
+      "✅ Akun *" + (klienAktif.Nama_Pendaftar || targetAktifId) + "* aktif *" +
+      jmlBulan + " bulan* hingga *" +
+      Utilities.formatDate(tglExp, "GMT+7", "dd/MM/yyyy") + "*.",
+      null, config.BOT_TOKEN);
+    kirimPesanSaaS(targetAktifId,
+      "🎉 *Akun berhasil diaktifkan!*\n\n" +
+      "Halo *" + sapAktif + "*, akun premium aktif hingga *" +
+      Utilities.formatDate(tglExp, "GMT+7", "dd/MM/yyyy") + "*.\n\n" +
+      "Ketik /lapor untuk mulai membuat laporan RHK. 🚀",
+      null, config.BOT_TOKEN);
     return true;
   }
 
-  // FITUR PENGAWASAN/AUDIT BERKALA STATUS PENDAFTARAN KLIEN YANG MACET
-  if (text === "/admin cek_pendaftaran") {
-    var shClient = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Client_SaaS");
-    var cData = shClient.getDataRange().getValues();
-    var laporanMacet = "📋 *DAFTAR KLIEN BELUM SELESAI DAFTAR* 📋\n\n";
-    var adaMacet = false;
-    var nomor = 1;
-    
-    for (var j = 1; j < cData.length; j++) {
-      var status = cData[j][3];
-      if (status !== "AKTIF" && status !== "NONAKTIF") {
-        laporanMacet += nomor + ". *" + cData[j][1] + "* (`" + cData[j][0] + "`)\n" +
-                        "   📍 Tahapan Sesi: `" + (cData[j][8] || "KOSONG/START") + "`\n" +
-                        "   🔗 Link Drive Klien: " + (cData[j][2] ? "[Buka Drive Klien](" + cData[j][2] + ")" : "`Belum Kirim`") + "\n\n";
-        adaMacet = true; nomor++;
+  // ── /admin kirim_template [ID] ────────────────────────────────────
+  if (text.indexOf("/admin kirim_template ") === 0) {
+    var tgtId = text.replace("/admin kirim_template ", "").trim();
+    if (!tgtId) {
+      kirimPesanSaaS(chatId,
+        "💡 Format: `/admin kirim_template [Chat_ID]`", null, config.BOT_TOKEN);
+      return true;
+    }
+    kirimTemplateKeKlien(tgtId, chatId, config);
+    return true;
+  }
+
+  // ── /admin follow_up [ID] ─────────────────────────────────────────
+  if (text.indexOf("/admin follow_up ") === 0) {
+    tampilkanInfoFollowUp(text.replace("/admin follow_up ", "").trim(), chatId, config);
+    return true;
+  }
+
+  // ── /admin follow_up_semua ────────────────────────────────────────
+  if (text === "/admin follow_up_semua") {
+    tampilkanDaftarFollowUpSemua(chatId, config);
+    return true;
+  }
+
+  // ── /admin daftar_chatid ──────────────────────────────────────────
+  if (text === "/admin daftar_chatid") {
+    var dSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Client_SaaS");
+    var dData  = dSheet.getDataRange().getValues();
+    if (dData.length <= 1) {
+      kirimPesanSaaS(chatId, "📭 Belum ada klien terdaftar.", null, config.BOT_TOKEN);
+      return true;
+    }
+    var emojiSt = {
+      "AKTIF":"🟢","NONAKTIF":"🔴","BELUM_DAFTAR":"⚪",
+      "REG_WIZARD":"🟡","PENDING_RHK":"🟠"
+    };
+    var BATCH = 25;
+    var baris = "📋 *DAFTAR KLIEN* _(Total: " + (dData.length-1) + ")_\n\n";
+    var batch = [];
+    for (var d = 1; d < dData.length; d++) {
+      var stD   = dData[d][3] || "BELUM_DAFTAR";
+      var expD  = dData[d][4]
+        ? Utilities.formatDate(new Date(dData[d][4]), "GMT+7", "dd/MM/yy") : "—";
+      baris += d + ". " + (emojiSt[stD]||"⚫") + " *" + (dData[d][1]||"—") + "*\n" +
+               "   🆔 `" + dData[d][0] + "` | `" + stD + "`" +
+               (stD==="AKTIF" ? " | exp `"+expD+"`" : "") + "\n\n";
+      if (d % BATCH === 0 || d === dData.length-1) {
+        batch.push(baris);
+        baris = "📋 _(Lanjutan " + (batch.length+1) + ")_\n\n";
       }
     }
-    if (!adaMacet) laporanMacet += "🎉 Luar biasa! Semua pendaftar sudah menyelesaikan administrasi pembayaran premium, Pak Admin!";
-    kirimPesanSaaS(chatId, laporanMacet, null, config.BOT_TOKEN);
+    for (var b = 0; b < batch.length; b++) {
+      kirimPesanSaaS(chatId, batch[b], null, config.BOT_TOKEN);
+    }
+    var kbCepat = {"inline_keyboard": [
+      [{"text":"📊 Cek Sistem","callback_data":"ADM_CEK_SISTEM"},
+       {"text":"📋 Cek Pendaftaran Macet","callback_data":"ADM_CEK_DAFTAR"}]
+    ]};
+    kirimPesanSaaS(chatId, "⚡ *Aksi cepat:*", kbCepat, config.BOT_TOKEN);
     return true;
   }
 
+
+  // ── /admin cek_pendaftaran ────────────────────────────────────────
+  if (text === "/admin cek_pendaftaran") {
+    var shC  = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Client_SaaS");
+    var cD   = shC.getDataRange().getValues();
+    var lap  = "📋 *KLIEN PENDAFTARAN BELUM SELESAI*\n\n";
+    var ada  = false; var no = 1;
+    for (var j = 1; j < cD.length; j++) {
+      var st = cD[j][3];
+      if (st !== "AKTIF" && st !== "NONAKTIF") {
+        var sesiMacet = cD[j][8] || "BELUM MULAI";
+        var linkDrive = cD[j][2]
+          ? "[Buka Drive](" + cD[j][2] + ")" : "`Belum dikirim`";
+        lap += no++ + ". *" + (cD[j][1]||"—") + "* (`" + cD[j][0] + "`)\n" +
+               "   📍 Tahap: `" + sesiMacet + "`\n" +
+               "   📁 Drive: " + linkDrive + "\n\n";
+        ada = true;
+      }
+    }
+    if (!ada) lap += "🎉 Semua pendaftar sudah menyelesaikan administrasi!";
+    var kbMacet = {"inline_keyboard": [
+      [{"text":"📣 Kirim Reminder ke Semua Macet","callback_data":"ADM_REMINDER_MACET"}]
+    ]};
+    kirimPesanSaaS(chatId, lap, ada ? kbMacet : null, config.BOT_TOKEN);
+    return true;
+  }
+
+  // ── /admin cek_sistem | /admin ────────────────────────────────────
   if (text === "/admin cek_sistem" || text === "/admin") {
-    var cSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Client_SaaS");
-    var totalUser = cSheet.getLastRow() - 1; var vData = cSheet.getDataRange().getValues(); var aktif = 0;
-    for (var k = 1; k < vData.length; k++) { if (vData[k][3] === "AKTIF") aktif++; }
-    
-    var statusSistem = "📊 *LAPORAN UTALITAS SAAS INTEGRASI* 📊\n\n" +
-                       "▪️ Total Klien Terdaftar: " + totalUser + " Orang\n" +
-                       "▪️ Klien Premium Aktif: " + aktif + " Akun\n" +
-                       "▪️ Status Gerbang Server: *ONLINE (Cloudflare)*\n" +
-                       "▪️ Menu Cek Macet: `/admin cek_pendaftaran`";
-    kirimPesanSaaS(chatId, statusSistem, null, config.BOT_TOKEN);
+    var cSh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Client_SaaS");
+    var tot = cSh.getLastRow() - 1;
+    var vD  = cSh.getDataRange().getValues();
+    var aktC = 0, pendC = 0, nonC = 0;
+    for (var k = 1; k < vD.length; k++) {
+      var s = vD[k][3];
+      if (s==="AKTIF") aktC++;
+      else if (s==="NONAKTIF") nonC++;
+      else pendC++;
+    }
+    var acSh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Admin_Commands");
+    var jCmd = 0;
+    if (acSh) {
+      var acD = acSh.getDataRange().getValues();
+      for (var ac = 1; ac < acD.length; ac++) {
+        if ((acD[ac][4]||"").toString().toUpperCase() === "TRUE") jCmd++;
+      }
+    }
+    var dashboard =
+      "📊 *DASHBOARD KINERJA RHK*\n\n" +
+      "👥 *Klien:*\n" +
+      "   🟢 Aktif: *" + aktC + "*\n" +
+      "   🟡 Pending/Proses: *" + pendC + "*\n" +
+      "   🔴 Nonaktif: *" + nonC + "*\n" +
+      "   📦 Total: *" + tot + "*\n\n" +
+      "⚙️ *Sistem:*\n" +
+      "   ▪️ Perintah Sheet Aktif: *" + jCmd + "*\n" +
+      "   ▪️ Status Server: *ONLINE* ✅\n\n" +
+      "📌 *Pintasan:*\n" +
+      "   `/admin bantuan` — Daftar semua perintah\n" +
+      "   `/admin daftar_chatid` — Semua Chat ID\n" +
+      "   `/admin follow_up_semua` — Klien perlu follow-up";
+    kirimPesanSaaS(chatId, dashboard, null, config.BOT_TOKEN);
+    return true;
+  }
+
+  // ── /admin bantuan ────────────────────────────────────────────────
+  if (text === "/admin bantuan") {
+    var bTeks =
+      "📖 *PANDUAN PERINTAH ADMIN*\n\n" +
+      "━━━ *PERINTAH INTI* ━━━\n" +
+      "▪️ `/admin` — Dashboard statistik\n" +
+      "▪️ `/admin bantuan` — Panduan ini\n" +
+      "▪️ `/admin daftar_chatid` — Semua Chat ID klien\n" +
+      "▪️ `/admin cek_pendaftaran` — Pendaftaran macet\n" +
+      "▪️ `/admin broadcast [pesan]` — Kirim ke semua aktif\n" +
+      "▪️ `/admin blokir [ID] [alasan]` — Blokir akun\n" +
+      "▪️ `/admin aktifkan [ID] [bulan]` — Aktifkan akun\n" +
+      "▪️ `/admin kirim_template [ID]` — Kirim template ke klien\n" +
+      "▪️ `/admin follow_up [ID]` — Info detail + aksi klien\n" +
+      "▪️ `/admin follow_up_semua` — Daftar klien expired/hampir\n\n" +
+      "━━━ *PERINTAH DARI SHEET* ━━━\n";
+    var acSh2 = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Admin_Commands");
+    if (acSh2) {
+      var acD2 = acSh2.getDataRange().getValues();
+      var adaPC = false;
+      for (var ac2 = 1; ac2 < acD2.length; ac2++) {
+        var fl = (acD2[ac2][4]||"").toString().toUpperCase() === "TRUE" ? "✅" : "❌";
+        bTeks += fl + " `" + acD2[ac2][0] + "` — _" + (acD2[ac2][5]||"—") + "_\n";
+        adaPC = true;
+      }
+      if (!adaPC) bTeks += "_Belum ada perintah di sheet Admin_Commands._\n";
+    }
+    bTeks += "\n💡 Tambah perintah baru di sheet *Admin_Commands* tanpa ubah kode!";
+    kirimPesanSaaS(chatId, bTeks, null, config.BOT_TOKEN);
+    return true;
+  }
+
+  // ── Engine perintah dinamis dari sheet ────────────────────────────
+  var hasilSheet = eksekusiPerintahDariSheet(chatId, text, config);
+  if (hasilSheet) return true;
+
+  kirimPesanSaaS(chatId,
+    "❓ Perintah tidak dikenali.\n\nKetik `/admin bantuan` untuk panduan lengkap.",
+    null, config.BOT_TOKEN);
+  return true;
+}
+
+
+// ====================================================================
+// ENGINE PERINTAH DINAMIS DARI SHEET Admin_Commands
+// Tipe: BALAS_TEKS | BROADCAST | KIRIM_KE_USER
+// ====================================================================
+function eksekusiPerintahDariSheet(chatId, text, config) {
+  var acSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Admin_Commands");
+  if (!acSheet) return false;
+  var acData = acSheet.getDataRange().getValues();
+
+  for (var i = 1; i < acData.length; i++) {
+    var pSheet = acData[i][0] ? acData[i][0].toString().trim() : "";
+    if (!pSheet) continue;
+    var cocok = (text === pSheet) || (text.indexOf(pSheet + " ") === 0);
+    if (!cocok) continue;
+
+    var tipe      = (acData[i][1]||"").toString().trim().toUpperCase();
+    var isiPesan  = (acData[i][3]||"").toString();
+    var aktifFlag = (acData[i][4]||"").toString().toUpperCase();
+
+    if (aktifFlag !== "TRUE") {
+      kirimPesanSaaS(chatId,
+        "⚠️ Perintah `" + pSheet + "` sedang *dinonaktifkan*.", null, config.BOT_TOKEN);
+      return true;
+    }
+
+    if (tipe === "BALAS_TEKS") {
+      kirimPesanSaaS(chatId, isiPesan, null, config.BOT_TOKEN);
+      return true;
+    }
+    if (tipe === "BROADCAST") {
+      var cSht = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Client_SaaS");
+      var cDat = cSht.getDataRange().getValues();
+      var hit  = 0;
+      for (var bc = 1; bc < cDat.length; bc++) {
+        if (cDat[bc][3] === "AKTIF") {
+          kirimPesanSaaS(cDat[bc][0].toString(),
+            "📢 *PENGUMUMAN PLATFORM KINERJA RHK*\n\n" + isiPesan, null, config.BOT_TOKEN);
+          hit++; Utilities.sleep(100);
+        }
+      }
+      kirimPesanSaaS(chatId,
+        "🚀 Broadcast `" + pSheet + "` terkirim ke *" + hit + "* klien aktif.",
+        null, config.BOT_TOKEN);
+      return true;
+    }
+    if (tipe === "KIRIM_KE_USER") {
+      var bagian    = text.replace(pSheet, "").trim();
+      var targetUID = bagian !== "" ? bagian.split(" ")[0] : "";
+      if (!targetUID) {
+        kirimPesanSaaS(chatId,
+          "💡 Sertakan Chat ID setelah perintah.\nContoh: `" + pSheet + " 927597163`",
+          null, config.BOT_TOKEN);
+        return true;
+      }
+      var pFinal = isiPesan.replace(/\{chatId\}/g, targetUID);
+      kirimPesanSaaS(targetUID, pFinal, null, config.BOT_TOKEN);
+      kirimPesanSaaS(chatId,
+        "✅ Pesan `" + pSheet + "` terkirim ke `" + targetUID + "`.",
+        null, config.BOT_TOKEN);
+      return true;
+    }
+    kirimPesanSaaS(chatId,
+      "⚠️ Tipe `" + tipe + "` tidak dikenal. Gunakan: BALAS_TEKS | BROADCAST | KIRIM_KE_USER",
+      null, config.BOT_TOKEN);
     return true;
   }
   return false;
 }
 
-// OTONOMISASI BARU: SIMPAN FILE TEMPLATE LANGSUNG KE GDRIVE PUSAT ADMIN (HIERARKI NAMA CLIENT)
+
+// ====================================================================
+// TERIMA TEMPLATE .docx DARI KLIEN
+// ====================================================================
+// Alur kerja yang benar:
+//   1. Klien kirim file .docx setelah akun AKTIF atau saat PENDING_RHK
+//   2. Sistem simpan ke Drive Admin (sub-folder nama klien)
+//   3. Konversi otomatis ke Google Docs
+//   4. Notif admin: nama klien, ID template, tombol aksi langsung
+//   5. Admin tambahkan placeholder {{TAG}} di Google Doc
+//   6. Admin isi RHK_Config dengan Template_ID
+//   7. Admin jalankan /admin aktifkan atau ubah status ke AKTIF
+// ====================================================================
 function prosesUnduhTemplateWordKlien(chatId, documentObj, config) {
   try {
-    var namaFile = documentObj.file_name;
-    if (namaFile.indexOf(".docx") === -1) {
-      kirimPesanSaaS(chatId, "❌ *Jenis berkas salah!* Mohon kirimkan file template laporan Anda dalam format dokumen Microsoft Word asli (`.docx`), Pak/Bu. 🙏", null, config.BOT_TOKEN);
+    var namaFile = documentObj.file_name || "template.docx";
+    if (namaFile.toLowerCase().indexOf(".docx") === -1) {
+      var kbSalahFormat = {"inline_keyboard": [
+        [tombolHubungiAdminWA()]
+      ]};
+      kirimPesanSaaS(chatId,
+        "❌ *Format file salah.*\n\n" +
+        "Sistem hanya menerima file *Microsoft Word (.docx)*.\n\n" +
+        "Pastikan file template laporan RHK dalam format .docx, " +
+        "bukan .doc, .pdf, atau format lainnya.",
+        kbSalahFormat, config.BOT_TOKEN);
       return;
     }
-    
-    var klien = cariAtauDaftarKlienSaaS(chatId, "");
-    var adminRootDrive = DriveApp.getFolderById(SAAS_CONFIG.ADMIN_ROOT_FOLDER_ID);
-    
-    // Pembuatan sub-folder otomatis pakai Nama Pendaftar di dalam Drive Admin
-    var folderNamaKlien;
-    var iter = adminRootDrive.getFoldersByName(klien.Nama_Pendaftar);
-    if (iter.hasNext()) {
-      folderNamaKlien = iter.next();
-    } else {
-      folderNamaKlien = adminRootDrive.createFolder(klien.Nama_Pendaftar);
-    }
-    
-    var fileRes = UrlFetchApp.fetch("https://api.telegram.org/bot" + config.BOT_TOKEN + "/getFile?file_id=" + documentObj.file_id);
+
+    var klien  = cariAtauDaftarKlienSaaS(chatId, "");
+    var sapaan = getSapaan(klien.Nama_Pendaftar);
+
+    // Buat atau ambil folder milik klien di Drive Admin
+    var adminRoot     = DriveApp.getFolderById(SAAS_CONFIG.ADMIN_ROOT_FOLDER_ID);
+    var folderNama    = klien.Nama_Pendaftar || "Klien_" + chatId;
+    var folderKlien;
+    var iterFolder    = adminRoot.getFoldersByName(folderNama);
+    folderKlien       = iterFolder.hasNext() ? iterFolder.next()
+                                             : adminRoot.createFolder(folderNama);
+
+    // Unduh file dari Telegram
+    var fileRes  = UrlFetchApp.fetch(
+      "https://api.telegram.org/bot" + config.BOT_TOKEN + "/getFile?file_id=" + documentObj.file_id,
+      {"muteHttpExceptions": true}
+    );
     var filePath = JSON.parse(fileRes.getContentText()).result.file_path;
-    var blobWord = UrlFetchApp.fetch("https://api.telegram.org/file/bot" + config.BOT_TOKEN + "/" + filePath).getBlob();
-    
-    // Simpan & konversi langsung ke format Google Docs di Drive Admin
-    var resource = { title: namaFile.replace(".docx", ""), mimeType: MimeType.GOOGLE_DOCS, parents: [{id: folderNamaKlien.getId()}] };
+    var blobWord = UrlFetchApp.fetch(
+      "https://api.telegram.org/file/bot" + config.BOT_TOKEN + "/" + filePath,
+      {"muteHttpExceptions": true}
+    ).getBlob();
+
+    // Konversi .docx → Google Docs
+    var namaDoc     = namaFile.replace(/\.docx$/i, "");
+    var resource    = {
+      title     : namaDoc,
+      mimeType  : MimeType.GOOGLE_DOCS,
+      parents   : [{id: folderKlien.getId()}]
+    };
     var googleDocFile = Drive.Files.insert(resource, blobWord);
-    
+    var templateId    = googleDocFile.id;
+
+    // Update status klien ke PENDING_RHK jika masih REG_WIZARD
+    if (klien.Status_Akses === "REG_WIZARD" || klien.Status_Akses === "BELUM_DAFTAR") {
+      perbaruiKolomKlien(chatId, "Status_Akses", "PENDING_RHK");
+    }
     perbaruiKolomKlien(chatId, "State_Sesi", "");
-    
-    var peringatanSetupAdmin = "⚠️ *Pemberitahuan:* Pendaftaran Anda telah selesai dilakukan. Saat ini Admin kami sedang melakukan konfigurasi susunan menu RHK khusus berdasarkan berkas template dokumen yang Anda kirimkan.\n\nMohon ditunggu dengan tenang ya Pak/Bu, kami akan segera mengabari Anda jika menu laporan Anda sudah siap digunakan! 🥰";
-    kirimPesanSaaS(chatId, peringatanSetupAdmin, null, config.BOT_TOKEN);
-    
-    // NOTIFIKASI DISERTAI TOMBOL PINTAS LANGSUNG KE DRIVE ADMIN (SOLUSI 2)
-    var alertAdmin = "🔔 *NOTIFIKASI TEMPLATE BARU DI DRIVE ADMIN* 🔔\n\n" +
-                     "👤 Pengguna: *" + klien.Nama_Pendaftar + "* (`" + chatId + "`)\n" +
-                     "📄 Nama Berkas: `" + namaFile + "`\n" +
-                     "🆔 Template ID Pusat: `" + googleDocFile.id + "`\n\n" +
-                     "👉 *Tugas Admin:* Silakan salin ID Template tersebut, buat susunan menu barunya ke sheet *RHK_Config*, sistem otonom akan langsung membangun folder harian klien!";
-                     
-    var kbDriveAdmin = {"inline_keyboard": [
-      [{"text": "📂 Buka Folder Drive Pusat Admin", "url": "https://drive.google.com/drive/folders/" + folderNamaKlien.getId()}]
+
+    // Balas ke klien
+    kirimPesanSaaS(chatId,
+      "✅ *File template berhasil diterima!*\n\n" +
+      "Terima kasih, *" + sapaan + "*. File *" + namaFile + "* sudah tersimpan " +
+      "di sistem dan sedang diteruskan ke Admin untuk dikonfigurasi.\n\n" +
+      "Admin akan menambahkan *placeholder* pada template dan menyiapkan " +
+      "menu pelaporan RHK khusus untuk *" + sapaan + "*.\n\n" +
+      "Notifikasi akan dikirimkan begitu menu siap digunakan. 🙏",
+      null, config.BOT_TOKEN);
+
+    // Notif lengkap ke admin dengan tombol aksi
+    var linkDoc   = "https://docs.google.com/document/d/" + templateId + "/edit";
+    var linkFolder = "https://drive.google.com/drive/folders/" + folderKlien.getId();
+    var kbAdmin = {"inline_keyboard": [
+      [{"text": "📝  Buka & Edit Google Doc",    "url": linkDoc}],
+      [{"text": "📂  Buka Folder Drive Klien",   "url": linkFolder}],
+      [{"text": "✅  Aktifkan Akun Klien",
+        "callback_data": "ADM_AKTIFKAN_" + chatId}]
     ]};
-    kirimPesanSaaS(config.ADMIN_CHAT_ID, alertAdmin, kbDriveAdmin, config.BOT_TOKEN);
-    
-  } catch (err) {
-    kirimPesanSaaS(chatId, "⚠️ Terjadi kegagalan penulisan dokumen ke Drive pusat Admin. Pastikan konfigurasi ID Root Admin benar.", null, config.BOT_TOKEN);
+    kirimPesanSaaS(config.ADMIN_CHAT_ID,
+      "📄 *TEMPLATE BARU MASUK*\n\n" +
+      "👤 Klien   : *" + (klien.Nama_Pendaftar||"—") + "* (`" + chatId + "`)\n" +
+      "📁 File    : `" + namaFile + "`\n" +
+      "🆔 Doc ID  : `" + templateId + "`\n\n" +
+      "━━━━━━━━━━━━━━━━━━━━\n" +
+      "📌 *Langkah Admin:*\n" +
+      "1. Buka Google Doc di bawah\n" +
+      "2. Tambahkan placeholder `{{TAG}}` pada bagian yang perlu diisi\n" +
+      "3. Salin *Doc ID* ke kolom `Template_ID` di sheet *RHK_Config*\n" +
+      "4. Tekan tombol *Aktifkan Akun* setelah konfigurasi selesai",
+      kbAdmin, config.BOT_TOKEN);
+
+  } catch (eTemplate) {
+    kirimPesanSaaS(chatId,
+      "⚠️ Terjadi kendala saat menyimpan file template. " +
+      "Admin telah menerima notifikasi. Mohon coba kembali beberapa saat.",
+      null, config.BOT_TOKEN);
+    var logSh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Log_Sistem");
+    if (logSh) logSh.appendRow([new Date(), "ERR_TEMPLATE",
+      "ChatID: " + chatId + " | " + eTemplate.toString()]);
   }
 }
 
-// [Fungsi buatInvoiceOtonomSaaS, terimaFotoBuktiTransferKlien, terimaFotoLaporanKegiatanKlien, eksekusiApprovePembayaranKlien, eksekusiRejectPembayaranKlien tetap utuh di bawah baris ini]
 
 // ====================================================================
-// FUNGSI LOGISTIK TRANSAKSI KOMERSIAL MULTI-CLIENT (PASTIKAN ADA DI FILE 05)
+// INVOICE + QR DINAMIS + OCR AUTO-APPROVE
 // ====================================================================
-
 function buatInvoiceOtonomSaaS(chatId, durasiBulan, config) {
-  var hargaAwal = { "1": 10000, "3": 30000, "6": 50000, "12": 100000 }[durasiBulan];
-  var kodeUnik = Math.floor(Math.random() * 900) + 100; // 3 Digit Acak Sistem
+  var hargaAwal    = {"1":10000,"3":30000,"6":50000,"12":100000}[durasiBulan];
+  var kodeUnik     = Math.floor(Math.random() * 900) + 100;
   var nominalTotal = hargaAwal + kodeUnik;
-  var trxId = "TRX" + new Date().getTime();
-  
-  // Simpan record pesanan sementara ke User Properties agar webhook tahu nominal yang ditunggu
-  var props = PropertiesService.getUserProperties();
-  props.setProperty(chatId + "_pending_trx_id", trxId);
-  props.setProperty(chatId + "_pending_total", nominalTotal.toString());
-  props.setProperty(chatId + "_pending_bulan", durasiBulan);
-  
+  var trxId        = "TRX" + new Date().getTime();
+  var klien        = cariAtauDaftarKlienSaaS(chatId, "");
+  var sapaan       = getSapaan(klien.Nama_Pendaftar);
+
+  var props = PropertiesService.getScriptProperties();
+  props.setProperty("pending_trx_"   + chatId, trxId);
+  props.setProperty("pending_total_" + chatId, nominalTotal.toString());
+  props.setProperty("pending_bulan_" + chatId, durasiBulan);
   perbaruiKolomKlien(chatId, "State_Sesi", "TUNGGU_BUKTI_BAYAR");
-  
-  var panduanBayar = "🛒 *NOTA INVOICE LISENSI PREMIUM* 🛒\n\n" +
-                     "▪️ Kode Pesanan: `" + trxId + "`\n" +
-                     "▪️ Durasi Paket: *" + durasiBulan + " Bulan*\n" +
-                     "▪️ *TOTAL TRANSFER:* `Rp " + nominalTotal.toLocaleString("id-ID") + "`\n\n" +
-                     "📌 *PENTING:* Mohon transfer nominal persis hingga *3 digit angka terakhir* ya Pak/Bu. Kelebihan nilai transfer diniatkan sebagai keikhlasan biaya otentikasi sistem. 🙏\n\n" +
-                     "Silakan scan QRIS Dana Bisnis di bawah ini, kemudian langsung *kirimkan foto bukti transfer* Anda ke bot ini:";
-  
-  // Ambil gambar fisik QRIS langsung dari Google Drive Admin
+
+  var panduan =
+    "🧾 *INVOICE LISENSI PREMIUM*\n\n" +
+    "▪️ Nama       : *" + (klien.Nama_Pendaftar||"—") + "*\n" +
+    "▪️ Kode Order : `" + trxId + "`\n" +
+    "▪️ Paket      : *" + durasiBulan + " Bulan*\n" +
+    "▪️ Harga Dasar: `Rp " + hargaAwal.toLocaleString("id-ID") + "`\n" +
+    "▪️ Kode Unik  : `+" + kodeUnik + "`\n" +
+    "━━━━━━━━━━━━━━━━━━━━\n" +
+    "💰 *TOTAL TRANSFER:*\n" +
+    "   `Rp " + nominalTotal.toLocaleString("id-ID") + "`\n" +
+    "━━━━━━━━━━━━━━━━━━━━\n\n" +
+    "📌 Transfer nominal *persis* termasuk 3 digit kode unik.\n" +
+    "Sistem akan memverifikasi otomatis.\n\n" +
+    "1️⃣ Scan QRIS di bawah ini\n" +
+    "2️⃣ Masukkan nominal *Rp " + nominalTotal.toLocaleString("id-ID") + "* secara manual\n" +
+    "3️⃣ Kirim *screenshot bukti pembayaran* ke chat ini";
+
   var blobQris = DriveApp.getFileById(SAAS_CONFIG.QRIS_FILE_ID).getBlob();
-  var pLoad = { "chat_id": chatId, "photo": blobQris, "caption": panduanBayar, "parse_mode": "Markdown" };
-  UrlFetchApp.fetch("https://api.telegram.org/bot" + config.BOT_TOKEN + "/sendPhoto", { "method": "post", "payload": pLoad });
+  UrlFetchApp.fetch("https://api.telegram.org/bot" + config.BOT_TOKEN + "/sendPhoto",
+    {"method":"post","payload":{"chat_id":chatId,"photo":blobQris,
+     "caption":panduan,"parse_mode":"Markdown"}});
+
+  // QR nominal dinamis
+  try {
+    var urlQR = "https://api.qrserver.com/v1/create-qr-code/?size=300x300&margin=10&data=" +
+      encodeURIComponent("NOMINAL: Rp " + nominalTotal.toLocaleString("id-ID") +
+                         " | KODE: " + trxId);
+    var blobQR = UrlFetchApp.fetch(urlQR, {"muteHttpExceptions":true}).getBlob();
+    UrlFetchApp.fetch("https://api.telegram.org/bot" + config.BOT_TOKEN + "/sendPhoto",
+      {"method":"post","payload":{
+        "chat_id":chatId,"photo":blobQR,
+        "caption":"📋 *QR Panduan Nominal*\nTotal: `Rp " +
+          nominalTotal.toLocaleString("id-ID") + "`\nKode: `" + trxId + "`",
+        "parse_mode":"Markdown"
+      }});
+  } catch(eQR) {
+    kirimPesanSaaS(chatId,
+      "📋 Total transfer: *Rp " + nominalTotal.toLocaleString("id-ID") + "*\nKode: `" + trxId + "`",
+      null, config.BOT_TOKEN);
+  }
 }
 
 function terimaFotoBuktiTransferKlien(chatId, photoArray, config) {
-  var props = PropertiesService.getUserProperties();
-  var trxId = props.getProperty(chatId + "_pending_trx_id") || "TRX_UNKNOWN";
-  var totalSistem = props.getProperty(chatId + "_pending_total") || "0";
-  var bulan = props.getProperty(chatId + "_pending_bulan") || "1";
-  var fileIdFoto = photoArray[photoArray.length - 1].file_id;
-  
-  var klien = cariAtauDaftarKlienSaaS(chatId, "");
-  perbaruiKolomKlien(chatId, "State_Sesi", ""); // Bebaskan sesi klien
-  
-  var infoNotif = "🔔 *KONFIRMASI BAYAR MASUK MULTI-CLIENT* 🔔\n\n" +
-                   "▪️ Pengguna: *" + klien.Nama_Pendaftar + "* (`" + chatId + "`)\n" +
-                   "▪️ Paket Order: *" + bulan + " Bulan*\n" +
-                   "▪️ Nominal Sistem: *Rp " + parseInt(totalSistem).toLocaleString("id-ID") + "*\n" +
-                   "▪️ Kode Unik: `+" + totalSistem.slice(-3) + "`\n\n" +
-                   "🟢 *VERIFIKASI KODE UNIK:* Silakan buka aplikasi DANA Bisnis Anda dan cocokkan apakah ada dana masuk dengan akhiran angka tersebut, lalu klik opsi menu di bawah ini:";
-                   
-  var kbAdmin = {"inline_keyboard": [
-    [{"text": "✅ Setujui & Aktifkan Akun", "callback_data": "ADM_APP_" + chatId + "_" + bulan}],
-    [{"text": "❌ Tolak Bukti Transfer", "callback_data": "ADM_REJ_" + chatId}]
-  ]};
-  
-  var pLoad = { "chat_id": config.ADMIN_CHAT_ID.toString(), "photo": fileIdFoto, "caption": infoNotif, "parse_mode": "Markdown", "reply_markup": JSON.stringify(kbAdmin) };
-  UrlFetchApp.fetch("https://api.telegram.org/bot" + config.BOT_TOKEN + "/sendPhoto", { "method": "post", "payload": pLoad });
-  
-  kirimPesanSaaS(chatId, "✨ *Bukti transfer Anda berhasil diterima!* \n\nSistem telah meneruskannya kepada Admin untuk divalidasi via mutasi rekening. Akun premium Anda akan segera aktif otomatis setelah disetujui ya, Pak/Bu! 🥰👍", null, config.BOT_TOKEN);
-}
+  var props       = PropertiesService.getScriptProperties();
+  var trxId       = props.getProperty("pending_trx_"   + chatId) || "TRX_UNKNOWN";
+  var totalSistem = parseInt(props.getProperty("pending_total_" + chatId) || "0");
+  var bulan       = props.getProperty("pending_bulan_" + chatId) || "1";
+  var fileIdFoto  = photoArray[photoArray.length - 1].file_id;
+  var klien       = cariAtauDaftarKlienSaaS(chatId, "");
+  perbaruiKolomKlien(chatId, "State_Sesi", "");
 
-function terimaFotoLaporanKegiatanKlien(chatId, photoArray, config) {
-  var klien = cariAtauDaftarKlienSaaS(chatId, "");
-  var count = parseInt(klien.Foto_Count || "0") + 1;
-  
-  if (count > 4) {
-    kirimPesanSaaS(chatId, "🛑 Batas pengiriman bukti gambar hanya *maksimal 4 foto* saja demi keserasian halaman dokumen myASN Anda. Yuk, langsung ketuk tombol 'Rakit Jadi PDF' di bawah ini!", null, config.BOT_TOKEN);
-    return;
+  kirimPesanSaaS(chatId,
+    "⏳ *Bukti pembayaran diterima!*\n" +
+    "Sistem sedang memverifikasi nominal secara otomatis...",
+    null, config.BOT_TOKEN);
+
+  // OCR via Drive
+  var hasilOCR = ""; var driveFileId = null;
+  try {
+    var getFileRes = UrlFetchApp.fetch(
+      "https://api.telegram.org/bot" + config.BOT_TOKEN + "/getFile?file_id=" + fileIdFoto,
+      {"muteHttpExceptions":true});
+    var filePath   = JSON.parse(getFileRes.getContentText()).result.file_path;
+    var fotoBlob   = UrlFetchApp.fetch(
+      "https://api.telegram.org/file/bot" + config.BOT_TOKEN + "/" + filePath,
+      {"muteHttpExceptions":true}).getBlob()
+      .setName("bukti.jpg").setContentType("image/jpeg");
+    var ocrFile    = Drive.Files.insert(
+      {title:"ocr_"+chatId, mimeType:MimeType.GOOGLE_DOCS}, fotoBlob);
+    driveFileId    = ocrFile.id;
+    hasilOCR       = DocumentApp.openById(driveFileId).getBody().getText();
+    DriveApp.getFileById(driveFileId).setTrashed(true);
+  } catch(eOCR) {
+    if (driveFileId) { try { DriveApp.getFileById(driveFileId).setTrashed(true); } catch(e2){} }
   }
-  
-  perbaruiKolomKlien(chatId, "Foto_Count", count);
-  PropertiesService.getUserProperties().setProperty(chatId + "_foto_" + count, photoArray[photoArray.length - 1].file_id);
-  
-  if (count < 2) {
-    kirimPesanSaaS(chatId, "📸 Foto ke-1 sukses direkam! Sila kirimkan berkas *Foto Bukti Kegiatan ke-2* Anda agar syarat minimal terpenuhi ya Pak/Bu:", null, config.BOT_TOKEN);
+
+  var nominalOCR = _ekstrakNominalDariTeks(hasilOCR);
+  if (nominalOCR !== null && Math.abs(nominalOCR - totalSistem) <= 5) {
+    _logSistem("AUTO_APPROVE", chatId + " | OCR: " + nominalOCR + " | Sistem: " + totalSistem);
+    eksekusiApprovePembayaranKlien(chatId + "_" + bulan, config);
+    kirimPesanSaaS(config.ADMIN_CHAT_ID,
+      "🤖 *Auto-Approve Berhasil* ✅\n\n" +
+      "👤 *" + (klien.Nama_Pendaftar||"—") + "* (`" + chatId + "`)\n" +
+      "▪️ OCR: `Rp " + nominalOCR.toLocaleString("id-ID") + "`\n" +
+      "▪️ Sistem: `Rp " + totalSistem.toLocaleString("id-ID") + "`\n" +
+      "▪️ Paket: *" + bulan + " Bulan*",
+      null, config.BOT_TOKEN);
   } else {
-    var kbCetak = {"inline_keyboard": [
-      [{"text": "📷 Tambah Foto Lagi (" + count + "/4)", "callback_data": "SaaS_PROSES_FOTO_LAGI"}],
-      [{"text": "🚀 Kirim & Rakit Jadi PDF Now!", "callback_data": "SaaS_PROSES_NOW"}]
-    ]};
-    kirimPesanSaaS(chatId, "✨ Bagus! Tersimpan *" + count + " foto bukti*. Apakah Anda ingin menyudahi pengiriman dan langsung menerbitkan berkas PDF laporan hari ini?", kbCetak, config.BOT_TOKEN);
+    var label = nominalOCR !== null
+      ? "RAGU (OCR: Rp " + nominalOCR.toLocaleString("id-ID") +
+        ", Sistem: Rp " + totalSistem.toLocaleString("id-ID") + ")"
+      : (hasilOCR ? "OCR_NO_NOMINAL" : "OCR_GAGAL");
+    _forwardBuktiBayarKeAdmin(chatId, fileIdFoto, klien, bulan, totalSistem, label, config);
   }
 }
 
+function _ekstrakNominalDariTeks(teks) {
+  if (!teks || !teks.trim()) return null;
+  var bersih    = teks.replace(/\./g,"").replace(/,/g,"");
+  var matches   = bersih.match(/\b\d{4,9}\b/g);
+  if (!matches)  return null;
+  var kandidat  = matches.map(function(m){return parseInt(m);})
+                         .filter(function(n){return n>=10000 && n<=999999;});
+  return kandidat.length ? Math.max.apply(null, kandidat) : null;
+}
+
+function _forwardBuktiBayarKeAdmin(chatId, fileIdFoto, klien, bulan, totalSistem, label, config) {
+  var kbAdmin = {"inline_keyboard": [
+    [{"text":"✅ Setujui & Aktifkan","callback_data":"ADM_APP_" + chatId + "_" + bulan}],
+    [{"text":"❌ Tolak Transfer",    "callback_data":"ADM_REJ_" + chatId}]
+  ]};
+  UrlFetchApp.fetch("https://api.telegram.org/bot" + config.BOT_TOKEN + "/sendPhoto",
+    {"method":"post","payload":{
+      "chat_id"      : config.ADMIN_CHAT_ID.toString(),
+      "photo"        : fileIdFoto,
+      "caption"      :
+        "🔔 *BUKTI BAYAR — PERLU REVIEW*\n\n" +
+        "👤 *" + (klien.Nama_Pendaftar||"—") + "* (`" + chatId + "`)\n" +
+        "▪️ Paket  : *" + bulan + " Bulan*\n" +
+        "▪️ Nominal: *Rp " + totalSistem.toLocaleString("id-ID") + "*\n" +
+        "▪️ Kode   : `+" + (totalSistem % 1000) + "`\n" +
+        "▪️ Status OCR: `" + label + "`\n\n" +
+        "Cek mutasi DANA Bisnis, lalu pilih aksi:",
+      "parse_mode"   : "Markdown",
+      "reply_markup" : JSON.stringify(kbAdmin)
+    }});
+  kirimPesanSaaS(chatId,
+    "✅ *Bukti pembayaran diterima!*\n\n" +
+    "Admin sedang memverifikasi pembayaran. " +
+    "Akun akan aktif otomatis setelah konfirmasi. 🙏",
+    null, config.BOT_TOKEN);
+}
+
+function _logSistem(tipe, detail) {
+  var ls = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Log_Sistem");
+  if (ls) ls.appendRow([new Date(), tipe, detail]);
+}
+
+
+// ====================================================================
+// APPROVE / REJECT PEMBAYARAN
+// ====================================================================
 function eksekusiApprovePembayaranKlien(callbackDataStr, config) {
-  var p = callbackDataStr.split("_"); // [chatId, durasiBulan]
-  var targetId = p[0]; var jmlBulan = parseInt(p[1]);
-  
+  var last    = callbackDataStr.lastIndexOf("_");
+  var targetId = callbackDataStr.substring(0, last);
+  var jmlBulan = parseInt(callbackDataStr.substring(last + 1));
+
   var targetKlien = cariAtauDaftarKlienSaaS(targetId, "");
-  var expBaru = new Date();
+  var sapaan      = getSapaan(targetKlien.Nama_Pendaftar);
+  var expBaru     = new Date();
   if (targetKlien.Status_Akses === "AKTIF" && new Date(targetKlien.Masa_Aktif) > new Date()) {
     expBaru = new Date(targetKlien.Masa_Aktif);
   }
   expBaru.setMonth(expBaru.getMonth() + jmlBulan);
-  
-  perbaruiKolomKlien(targetId, "Status_Akses", "AKTIF");
-  perbaruiKolomKlien(targetId, "Masa_Aktif", expBaru);
-  
-  kirimPesanSaaS(config.ADMIN_CHAT_ID.toString(), "⚙️ Sukses memvalidasi pembayaran. Akun `" + targetId + "` telah aktif premium.", null, config.BOT_TOKEN);
-  
-  var txtSuksesKlien = "🎉 *YAY, PEMBAYARAN PREMIUM DISETUJUI!* 🎉\n\n" +
-                       "Selamat Pak/Bu *" + targetKlien.Nama_Pendaftar + "*, lisensi Anda telah resmi diverifikasi oleh Admin. Akun Anda kini aktif kembali hingga tanggal *" + Utilities.formatDate(expBaru, "GMT+7", "dd/MM/yyyy") + "*.\n\n" +
-                       "Silakan kirimkan file template laporan Microsoft Word (`.docx`) RHK Anda langsung ke chat bot ini sebagai syarat setup awal pembuatan tombol menu, Pak/Bu! 🥰🚀";
-  kirimPesanSaaS(targetId, txtSuksesKlien, null, config.BOT_TOKEN);
+
+  perbaruiKolomKlien(targetId, "Status_Akses",  "AKTIF");
+  perbaruiKolomKlien(targetId, "Masa_Aktif",    expBaru);
+  perbaruiKolomKlien(targetId, "Warning_Sent",  "");
+
+  var props = PropertiesService.getScriptProperties();
+  props.deleteProperty("pending_trx_"   + targetId);
+  props.deleteProperty("pending_total_" + targetId);
+  props.deleteProperty("pending_bulan_" + targetId);
+
+  if (config && config.BOT_TOKEN) {
+    var expStr = Utilities.formatDate(expBaru, "GMT+7", "dd/MM/yyyy");
+    kirimPesanSaaS(config.ADMIN_CHAT_ID.toString(),
+      "✅ Akun `" + targetId + "` aktif *" + jmlBulan + " bulan* hingga *" + expStr + "*.",
+      null, config.BOT_TOKEN);
+    kirimPesanSaaS(targetId,
+      "🎉 *Pembayaran Disetujui!*\n\n" +
+      "Halo *" + sapaan + "*, akun premium aktif hingga *" + expStr + "*.\n\n" +
+      "Ketik /lapor untuk mulai membuat laporan RHK. 🚀",
+      null, config.BOT_TOKEN);
+  }
+  _logSistem("APPROVE", targetId + " | " + jmlBulan + " bln");
 }
 
 function eksekusiRejectPembayaranKlien(targetId, config) {
-  kirimPesanSaaS(config.ADMIN_CHAT_ID.toString(), "❌ Transaksi untuk ID `" + targetId + "` berhasil ditolak sepihak.", null, config.BOT_TOKEN);
-  kirimPesanSaaS(targetId, "🛑 *Konfirmasi Pembayaran Ditolak* 🛑\n\nMohon maaf, bukti transfer yang Anda kirimkan dinyatakan *Tidak Valid* oleh Admin setelah pemeriksaan mutasi. Silakan lakukan pemesanan ulang dengan mengetik /bayar dan pastikan nominal transfer sesuai.", null, config.BOT_TOKEN);
+  var kbRej = {"inline_keyboard": [
+    [{"text":"🔄 Coba Bayar Ulang", "callback_data":"SHORTCUT_BAYAR"}],
+    [tombolHubungiAdminWA()]
+  ]};
+  kirimPesanSaaS(config.ADMIN_CHAT_ID.toString(),
+    "❌ Pembayaran ID `" + targetId + "` ditolak.", null, config.BOT_TOKEN);
+  kirimPesanSaaS(targetId,
+    "🛑 *Pembayaran Tidak Valid*\n\n" +
+    "Bukti transfer yang dikirimkan tidak dapat diverifikasi. " +
+    "Silakan ulangi pembayaran dengan nominal yang tepat.",
+    kbRej, config.BOT_TOKEN);
+  _logSistem("REJECT", targetId);
+}
+
+// ====================================================================
+// FOTO LAPORAN KEGIATAN
+// ====================================================================
+function terimaFotoLaporanKegiatanKlien(chatId, photoArray, config) {
+  var klien = cariAtauDaftarKlienSaaS(chatId, "");
+  var count = parseInt(klien.Foto_Count || "0") + 1;
+
+  if (count > 4) {
+    kirimPesanSaaS(chatId,
+      "🛑 Maksimal *4 foto* per laporan. Silakan ketuk tombol cetak PDF.",
+      null, config.BOT_TOKEN);
+    return;
+  }
+
+  perbaruiKolomKlien(chatId, "Foto_Count", count);
+  PropertiesService.getScriptProperties()
+    .setProperty("sess_" + chatId + "_foto_" + count, photoArray[photoArray.length-1].file_id);
+
+  if (count < 2) {
+    kirimPesanSaaS(chatId,
+      "📸 Foto ke-1 tersimpan! Kirimkan *foto ke-2* untuk memenuhi syarat minimal:",
+      null, config.BOT_TOKEN);
+  } else {
+    var kbCetak = {"inline_keyboard": [
+      [{"text":"📷 Tambah Foto (" + count + "/4)", "callback_data":"SaaS_PROSES_FOTO_LAGI"}],
+      [{"text":"🚀 Rakit Jadi PDF Sekarang!",       "callback_data":"SaaS_PROSES_NOW"}]
+    ]};
+    kirimPesanSaaS(chatId,
+      "✅ *" + count + " foto* tersimpan. Lanjut tambah foto atau cetak PDF?",
+      kbCetak, config.BOT_TOKEN);
+  }
+}
+
+// ====================================================================
+// FOLLOW-UP KLIEN: INFO DETAIL + TOMBOL AKSI
+// ====================================================================
+function tampilkanInfoFollowUp(targetChatId, adminChatId, config) {
+  var klien   = cariAtauDaftarKlienSaaS(targetChatId, "");
+  if (!klien || klien.Status_Akses === "BELUM_DAFTAR") {
+    kirimPesanSaaS(adminChatId,
+      "❌ Chat ID `" + targetChatId + "` tidak ditemukan.", null, config.BOT_TOKEN);
+    return;
+  }
+  var sapaan   = getSapaan(klien.Nama_Pendaftar);
+  var expStr   = klien.Masa_Aktif
+    ? Utilities.formatDate(new Date(klien.Masa_Aktif), "GMT+7", "dd/MM/yyyy") : "—";
+  var sisaHari = klien.Masa_Aktif
+    ? Math.ceil((new Date(klien.Masa_Aktif) - new Date()) / 86400000) : null;
+  var infoSisa = sisaHari !== null
+    ? (sisaHari > 0 ? "Sisa *" + sisaHari + " hari*" : "⛔ *EXPIRED*") : "—";
+
+  var info =
+    "👤 *PROFIL KLIEN*\n" +
+    "━━━━━━━━━━━━━━━━━━━━\n" +
+    "▪️ Nama      : *" + (klien.Nama_Pendaftar||"—") + "*\n" +
+    "▪️ Chat ID   : `" + targetChatId + "`\n" +
+    "▪️ Status    : `" + klien.Status_Akses + "`\n" +
+    "▪️ Masa Aktif: `" + expStr + "` — " + infoSisa + "\n" +
+    "▪️ Total Cetak: " + (klien.Total_Laporan||0) + "x\n" +
+    "▪️ Warning   : `" + (klien.Warning_Sent||"—") + "`\n\n";
+
+  // Deeplink WA dengan pesan kontekstual
+  var pesanWA = "Halo " + sapaan + ", saya Admin Kinerja RHK ingin menghubungi " +
+    "terkait akun yang " +
+    (sisaHari !== null && sisaHari <= 0 ? "sudah expired" : "akan segera expired") + ".";
+  var linkWA  = "https://wa.me/" + SAAS_CONFIG.ADMIN_WHATSAPP_NO +
+                "?text=" + encodeURIComponent(pesanWA);
+
+  var kb = {"inline_keyboard": [
+    [{"text":"📲  Buka WhatsApp Admin (Kirim ke Klien)", "url": linkWA}],
+    [{"text":"💬 Kirim Pesan Bot ke Klien",  "callback_data":"ADM_MSG_"      + targetChatId}],
+    [{"text":"📄 Kirim Ulang Template",       "callback_data":"ADM_SEND_TPL_" + targetChatId}]
+  ]};
+  kirimPesanSaaS(adminChatId, info + "Pilih aksi untuk *" + sapaan + "*:", kb, config.BOT_TOKEN);
+}
+
+function tampilkanDaftarFollowUpSemua(adminChatId, config) {
+  var semua    = cariSemuaKlienByStatus("AKTIF");
+  var sekarang = new Date();
+  var daftar   = [];
+
+  semua.forEach(function(k) {
+    if (!k.Masa_Aktif) return;
+    var sisa = Math.ceil((new Date(k.Masa_Aktif) - sekarang) / 86400000);
+    if (sisa <= 7) daftar.push({klien:k, sisa:sisa});
+  });
+  var nonaktif = cariSemuaKlienByStatus("NONAKTIF");
+  nonaktif.forEach(function(k) {
+    if ((k.Catatan_Admin||"").toString().indexOf("Expired") !== -1)
+      daftar.push({klien:k, sisa:-999});
+  });
+
+  if (!daftar.length) {
+    kirimPesanSaaS(adminChatId,
+      "🎉 Tidak ada klien yang expired atau hampir expired (≤7 hari).",
+      null, config.BOT_TOKEN);
+    return;
+  }
+  daftar.sort(function(a,b){return a.sisa-b.sisa;});
+
+  var teks = "⚠️ *KLIEN PERLU FOLLOW-UP*\n_(Expired / Sisa ≤ 7 hari)_\n\n";
+  var kb   = {"inline_keyboard":[]};
+
+  for (var i = 0; i < daftar.length; i++) {
+    var k    = daftar[i].klien;
+    var sisa = daftar[i].sisa;
+    var lbl  = sisa <= 0 ? "❌ EXPIRED" : "⚠️ H-" + sisa;
+    teks += (i+1) + ". *" + (k.Nama_Pendaftar||"—") +
+            "* (`" + k.Chat_ID + "`) — " + lbl + "\n";
+    var pesanWAFU = "Halo " + getSapaan(k.Nama_Pendaftar) +
+      ", masa aktif akun Kinerja RHK " +
+      (sisa <= 0 ? "sudah berakhir" : "tersisa " + sisa + " hari") +
+      ". Ketik /bayar untuk perpanjangan.";
+    kb.inline_keyboard.push([{
+      "text": "📲  WA " + getSapaan(k.Nama_Pendaftar) + " (" + lbl + ")",
+      "url" : "https://wa.me/" + SAAS_CONFIG.ADMIN_WHATSAPP_NO +
+              "?text=" + encodeURIComponent(pesanWAFU)
+    }]);
+  }
+  kirimPesanSaaS(adminChatId, teks, null, config.BOT_TOKEN);
+  if (kb.inline_keyboard.length)
+    kirimPesanSaaS(adminChatId, "📲 *Tombol WA cepat:*", kb, config.BOT_TOKEN);
+}
+
+// ====================================================================
+// KIRIM TEMPLATE KE KLIEN
+// ====================================================================
+function kirimTemplateKeKlien(targetChatId, adminChatId, config) {
+  try {
+    var klien  = cariAtauDaftarKlienSaaS(targetChatId, "");
+    var sapaan = getSapaan(klien.Nama_Pendaftar);
+    if (!klien.Nama_Pendaftar) {
+      kirimPesanSaaS(adminChatId,
+        "❌ Chat ID `" + targetChatId + "` tidak ditemukan.", null, config.BOT_TOKEN);
+      return;
+    }
+    var adminRoot = DriveApp.getFolderById(SAAS_CONFIG.ADMIN_ROOT_FOLDER_ID);
+    var iter      = adminRoot.getFoldersByName(klien.Nama_Pendaftar);
+    if (!iter.hasNext()) {
+      kirimPesanSaaS(adminChatId,
+        "❌ Folder Drive untuk *" + sapaan + "* belum ada.\n" +
+        "Klien belum pernah mengirim file template.", null, config.BOT_TOKEN);
+      return;
+    }
+    var folder    = iter.next();
+    var files     = folder.getFiles();
+    var jumlah    = 0; var daftarId = "";
+
+    kirimPesanSaaS(adminChatId,
+      "⏳ Mengirim template *" + sapaan + "* ke `" + targetChatId + "`...",
+      null, config.BOT_TOKEN);
+    kirimPesanSaaS(targetChatId,
+      "📄 *Admin mengirimkan file template RHK Anda kembali:*",
+      null, config.BOT_TOKEN);
+
+    while (files.hasNext()) {
+      var file   = files.next();
+      var mime   = file.getMimeType();
+      var blob   = mime === MimeType.GOOGLE_DOCS
+        ? file.getAs("application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+               .setName(file.getName() + ".docx")
+        : file.getBlob();
+      kirimDokumenSaaS(targetChatId, blob, "📋 " + file.getName(), config.BOT_TOKEN);
+      if (mime === MimeType.GOOGLE_DOCS)
+        daftarId += "▪️ `" + file.getName() + "` → ID: `" + file.getId() + "`\n";
+      jumlah++;
+      Utilities.sleep(500);
+    }
+    if (!jumlah) {
+      kirimPesanSaaS(adminChatId, "⚠️ Folder *" + sapaan + "* kosong.", null, config.BOT_TOKEN);
+      return;
+    }
+    kirimPesanSaaS(adminChatId,
+      "✅ *" + jumlah + " file* terkirim ke *" + sapaan + "*.\n\n" +
+      "📌 *ID untuk RHK_Config:*\n" + daftarId,
+      null, config.BOT_TOKEN);
+  } catch(eK) {
+    kirimPesanSaaS(adminChatId,
+      "⚠️ Gagal kirim template: `" + eK.toString() + "`", null, config.BOT_TOKEN);
+  }
 }

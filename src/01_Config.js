@@ -1,31 +1,67 @@
 // ====================================================================
-// FILE 01: PUSAT KONFIGURASI GLOBAL & UTilitas UTAMA (REVISI V3)
+// FILE 01: PUSAT KONFIGURASI GLOBAL & UTILITAS UTAMA (REVISI V4)
 // ====================================================================
 
 const SAAS_CONFIG = {
-  ADMIN_TELEGRAM: "@Septian_DK",
+  ADMIN_TELEGRAM    : "@Septian_DK",
+  ADMIN_WHATSAPP_NO : "6285100062524",   // Nomor WA admin tanpa tanda +
   ADMIN_WHATSAPP_LINK: "https://wa.me/6285100062524?text=Halo%20Admin%20Kinerja%20RHK%2C%20saya%20butuh%20bantuan%20terkait%20Sistem%20RHK",
   EMAIL_MITRA_EDITOR: "waliasrama.43@gmail.com",
-  
+
   // ID MASTER DRIVE INDUK MILIK ADMIN (Tempat menyimpan template kiriman klien)
   ADMIN_ROOT_FOLDER_ID: "1zisjFNqoSV5RTAp-9ysyHIc7d9eJ2Yfp",
-  
-  QRIS_FOLDER_ID: "1l2pRo9QQKA--44hq8cQ8KNvuNy7FI1hd",
-  QRIS_FILE_ID: "1mTvS-fGL9wpAEl3wlRdSNtvI1XHSzqja",
-  
-  TEKS_PRIVASI_DRIVE: "🔒 *JAMINAN PRIVASI & KEAMANAN DATA*\n" +
-                      "Folder yang Anda bagikan 100% tetap menjadi hak milik penuh Anda pribadi. Sistem hanya menaruh file PDF di dalam folder tersebut saja.\n\n" +
-                      "➖➖➖➖➖➖➖➖➖➖\n\n" +
-                      "👇 *MOHON LAKUKAN LANGKAH BERIKUT:* 👇\n\n" +
-                      "1️⃣ Buatlah 1 folder baru yang kosong di Google Drive Anda.\n" +
-                      "2️⃣ Ubah pengaturan berbaginya menjadi hak akses *EDITOR* (bukan Pelihat).\n" +
-                      "3️⃣ Pastikan email `waliasrama.43@gmail.com` telah dimasukkan ke dalam akses Editor tersebut.\n\n" +
-                      "🔗 *Jika sudah, silakan salin (copy) dan KIRIMKAN LINK/TAUTAN folder tersebut ke obrolan ini sekarang ya, Pak/Bu!* 😊"
+  QRIS_FOLDER_ID      : "1l2pRo9QQKA--44hq8cQ8KNvuNy7FI1hd",
+  QRIS_FILE_ID        : "1mTvS-fGL9wpAEl3wlRdSNtvI1XHSzqja",
+
+  TEKS_PRIVASI_DRIVE:
+    "🔒 *JAMINAN PRIVASI & KEAMANAN DATA*\n" +
+    "Folder yang dibagikan 100% tetap menjadi hak milik Anda sepenuhnya. " +
+    "Sistem hanya menyimpan file PDF hasil laporan di dalam folder tersebut.\n\n" +
+    "➖➖➖➖➖➖➖➖➖➖\n\n" +
+    "👇 *LANGKAH YANG PERLU DILAKUKAN:* 👇\n\n" +
+    "1️⃣ Buat *1 folder baru kosong* di Google Drive Anda.\n" +
+    "2️⃣ Ubah pengaturan berbagi menjadi akses *EDITOR* (bukan Pelihat).\n" +
+    "3️⃣ Tambahkan email `waliasrama.43@gmail.com` sebagai Editor.\n\n" +
+    "🔗 *Setelah selesai, salin dan kirimkan link folder tersebut ke sini.* 😊"
 };
 
+// ====================================================================
+// UTILITAS: Ambil sapaan profesional berdasarkan nama klien
+// Aturan:
+//   - Jika nama tersedia → gunakan nama langsung (tanpa Pak/Bu)
+//   - Jika nama kosong → gunakan sapaan generik "Anda"
+// ====================================================================
+function getSapaan(namaKlien) {
+  if (!namaKlien || namaKlien.toString().trim() === "") return "Anda";
+  // Ambil nama depan saja untuk sapaan yang lebih ringkas
+  var namaDepan = namaKlien.toString().trim().split(" ")[0];
+  return namaDepan;
+}
+
+// ====================================================================
+// UTILITAS: Buat inline keyboard tombol WhatsApp yang interaktif
+// Tampilan: tombol dengan ikon telepon + teks klik — profesional & bersih
+// ====================================================================
+function buatTombolWA(labelTeks, pesanWA) {
+  var urlWA = "https://wa.me/" + SAAS_CONFIG.ADMIN_WHATSAPP_NO +
+              "?text=" + encodeURIComponent(pesanWA);
+  return {"text": "📲  " + labelTeks, "url": urlWA};
+}
+
+// Tombol WA standar — digunakan di banyak tempat
+function tombolHubungiAdminWA() {
+  return buatTombolWA(
+    "WhatsApp Admin",
+    "Halo Admin Kinerja RHK, saya membutuhkan bantuan terkait sistem."
+  );
+}
+
+// ====================================================================
+// SETUP: Buat/inisialisasi semua sheet database
+// ====================================================================
 function ambilKonfigurasiSaaS() {
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Pengaturan");
-  var data = sheet.getDataRange().getValues();
+  var data  = sheet.getDataRange().getValues();
   var config = {};
   for (var i = 1; i < data.length; i++) { config[data[i][0]] = data[i][1]; }
   return config;
@@ -33,49 +69,128 @@ function ambilKonfigurasiSaaS() {
 
 function setupStrukturDatabaseSaaS() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
+
   var templateSheets = {
-    "Pengaturan": [["Kunci", "Nilai"], ["BOT_TOKEN", "8892439073:AAE-BYuT8-bEOBlYjMugLK6sCiugPVki-j0"], ["ADMIN_CHAT_ID", "927597163"]],
-    "Client_SaaS": [["Chat_ID", "Nama_Pendaftar", "Folder_Root_ID", "Status_Akses", "Masa_Aktif", "Limit_Harian", "Total_Laporan", "Catatan_Admin", "State_Sesi", "RHK_Terpilih", "Tanggal_Terpilih", "Hari_Terpilih", "Current_Placeholder_Index", "Foto_Count"]],
-    "RHK_Config": [["Chat_ID", "RHK_ID", "Label_Menu", "Emoji", "Template_ID", "Folder_PDF_ID", "Folder_Foto_ID", "Min_Foto", "Max_Foto", "Urutan"]],
-    "Kamus_Placeholder": [["Kode_Placeholder", "Pertanyaan_Bot"], ["LOKASI", "Di mana lokasi pelaksanaan kegiatan Anda hari ini, Pak/Bu? 📍"], ["URAIAN", "Mohon ceritakan uraian singkat mengenai jalan dan poin kegiatan tersebut: 📝"], ["TUJUAN", "Apa target utama atau tujuan yang ingin dicapai dari agenda ini? 🎯"], ["PIHAK", "Siapa saja pihak, rekan sejawat, atau partisipan yang terlibat di lokasi? 👥"], ["TL", "Bagaimana rencana Tindak Lanjut (TL) ke depan pasca kegiatan selesai? 🚀"], ["KESIMPULAN", "Tuliskan kesimpulan akhir atau ringkasan hasil kegiatan Anda: 📊"]]
+    // ── 3 kunci utama sistem ─────────────────────────────────────
+    // BOT_TOKEN     : token bot dari @BotFather
+    // ADMIN_CHAT_ID : Chat ID Telegram admin
+    // WEBHOOK_URL   : URL Web App GAS (isi setelah deploy)
+    "Pengaturan": [
+      ["Kunci", "Nilai"],
+      ["BOT_TOKEN",    "ISI_BOT_TOKEN_ANDA"],
+      ["ADMIN_CHAT_ID","ISI_CHAT_ID_ADMIN"],
+      ["WEBHOOK_URL",  "https://script.google.com/macros/s/ISI_DEPLOYMENT_ID/exec"]
+    ],
+
+    // ── Client_SaaS: kolom utama klien ───────────────────────────
+    // Warning_Sent  : flag warning terkirim (7,3,0,BLOCKED)
+    // Reg_Reminder  : tanggal terakhir kirim reminder pendaftaran macet
+    "Client_SaaS": [[
+      "Chat_ID", "Nama_Pendaftar", "Folder_Root_ID", "Status_Akses",
+      "Masa_Aktif", "Limit_Harian", "Total_Laporan", "Catatan_Admin",
+      "State_Sesi", "RHK_Terpilih", "Tanggal_Terpilih", "Hari_Terpilih",
+      "Current_Placeholder_Index", "Foto_Count", "Warning_Sent", "Reg_Reminder"
+    ]],
+
+    "RHK_Config": [[
+      "Chat_ID", "RHK_ID", "Label_Menu", "Emoji",
+      "Template_ID", "Folder_PDF_ID", "Folder_Foto_ID",
+      "Min_Foto", "Max_Foto", "Urutan"
+    ]],
+
+    "Kamus_Placeholder": [
+      ["Kode_Placeholder", "Pertanyaan_Bot"],
+      ["LOKASI",     "Di mana lokasi pelaksanaan kegiatan hari ini? 📍"],
+      ["URAIAN",     "Ceritakan uraian singkat mengenai kegiatan tersebut: 📝"],
+      ["TUJUAN",     "Apa target utama atau tujuan yang ingin dicapai? 🎯"],
+      ["PIHAK",      "Siapa saja pihak atau partisipan yang terlibat? 👥"],
+      ["TL",         "Bagaimana rencana Tindak Lanjut ke depan? 🚀"],
+      ["KESIMPULAN", "Tuliskan kesimpulan akhir atau ringkasan hasil kegiatan: 📊"]
+    ],
+
+    // ── Admin_Commands: perintah dinamis tanpa ubah kode ─────────
+    "Admin_Commands": [
+      ["Perintah", "Tipe", "Parameter", "Isi_Pesan", "Aktif", "Deskripsi"],
+      ["/admin info_kontak", "BALAS_TEKS", "",
+       "📞 *Kontak Dukungan Platform*\n\n▪️ Telegram: @Septian_DK\n▪️ WhatsApp: wa.me/6285100062524\n▪️ Email: waliasrama.43@gmail.com\n\n_Jam layanan: Senin–Jumat, 08.00–17.00 WIB_",
+       "TRUE", "Info kontak dukungan teknis platform"],
+      ["/admin umumkan_libur", "BROADCAST", "",
+       "📢 *Pemberitahuan Layanan*\n\nLayanan bot Kinerja RHK akan libur sementara pada hari raya nasional. Pelaporan dapat dilanjutkan kembali setelah layanan aktif. Terima kasih atas pengertiannya. 🙏",
+       "TRUE", "Broadcast pengumuman libur"],
+      ["/admin teguran", "KIRIM_KE_USER", "{chatId}",
+       "⚠️ *Pemberitahuan Khusus*\n\nTim Admin mendeteksi adanya hal yang perlu dikonfirmasi terkait akun Anda. Mohon segera hubungi Admin untuk klarifikasi. Terima kasih.",
+       "TRUE", "Kirim pesan teguran ke klien (sertakan Chat ID)"],
+      ["/admin promo_perpanjang", "BROADCAST", "",
+       "🎁 *Penawaran Perpanjangan Spesial!*\n\nDapatkan penawaran menarik untuk perpanjangan paket premium bulan ini. Ketik /bayar untuk melihat pilihan paket. Jangan lewatkan! 🥰",
+       "TRUE", "Broadcast promo perpanjangan paket"]
+    ]
   };
+
   for (var sheetName in templateSheets) {
     if (!ss.getSheetByName(sheetName)) {
       var sheet = ss.insertSheet(sheetName);
-      sheet.getRange(1, 1, 1, templateSheets[sheetName][0].length).setValues([templateSheets[sheetName][0]]).setFontWeight("bold");
-      if (templateSheets[sheetName].length > 1) sheet.getRange(2, 1, templateSheets[sheetName].length - 1, templateSheets[sheetName][0].length).setValues(templateSheets[sheetName].slice(1));
-      sheet.autoResizeColumns(1, templateSheets[sheetName][0].length);
+      var rows  = templateSheets[sheetName];
+      sheet.getRange(1, 1, 1, rows[0].length)
+           .setValues([rows[0]]).setFontWeight("bold");
+      if (rows.length > 1) {
+        sheet.getRange(2, 1, rows.length - 1, rows[0].length)
+             .setValues(rows.slice(1));
+      }
+      sheet.autoResizeColumns(1, rows[0].length);
     }
+  }
+
+  // Style sheet Admin_Commands
+  var acSh = ss.getSheetByName("Admin_Commands");
+  if (acSh) {
+    acSh.getRange(1, 1, 1, 6)
+        .setBackground("#1a73e8").setFontColor("#ffffff").setFontWeight("bold");
+    acSh.setFrozenRows(1);
   }
 }
 
+// ====================================================================
+// UTILITAS PENGIRIMAN PESAN
+// ====================================================================
 function kirimPesanSaaS(chatId, text, kb, token) {
-  var p = {"chat_id": chatId, "text": text, "parse_mode": "Markdown", "disable_web_page_preview": true};
+  var p = {
+    "chat_id"                  : chatId,
+    "text"                     : text,
+    "parse_mode"               : "Markdown",
+    "disable_web_page_preview" : true
+  };
   if (kb) p.reply_markup = JSON.stringify(kb);
-  return UrlFetchApp.fetch("https://api.telegram.org/bot" + token + "/sendMessage", {"method": "post", "contentType": "application/json", "payload": JSON.stringify(p), "muteHttpExceptions": true});
+  return UrlFetchApp.fetch(
+    "https://api.telegram.org/bot" + token + "/sendMessage",
+    {"method": "post", "contentType": "application/json",
+     "payload": JSON.stringify(p), "muteHttpExceptions": true}
+  );
 }
 
 function kirimDokumenSaaS(chatId, blob, caption, token) {
-  return UrlFetchApp.fetch("https://api.telegram.org/bot" + token + "/sendDocument", {"method": "post", "payload": {"chat_id": chatId.toString(), "document": blob, "caption": caption, "parse_mode": "Markdown"}, "muteHttpExceptions": true});
+  return UrlFetchApp.fetch(
+    "https://api.telegram.org/bot" + token + "/sendDocument",
+    {"method": "post", "payload": {
+      "chat_id"    : chatId.toString(),
+      "document"   : blob,
+      "caption"    : caption,
+      "parse_mode" : "Markdown"
+    }, "muteHttpExceptions": true}
+  );
 }
 
 function tesBacaTemplate() {
-  // Kita tes ID RHK_1 milik Adelia
-  var id = "192OgBgLeB9uqeA4dBJb0aEohbh822hlhMiVOVdLF7FA"; 
+  var id = "192OgBgLeB9uqeA4dBJb0aEohbh822hlhMiVOVdLF7FA";
   try {
-    var doc = DocumentApp.openById(id);
-    Logger.log("✅ SUKSES! Ini adalah Google Doc asli.");
+    DocumentApp.openById(id);
+    Logger.log("✅ SUKSES! Google Doc terbaca.");
   } catch(e) {
-    Logger.log("❌ GAGAL! File tidak terbaca.");
-    Logger.log("Detail Error: " + e.toString());
-    Logger.log("💡 Solusi: File tersebut masih .docx atau Anda tidak memiliki akses Editor.");
+    Logger.log("❌ GAGAL: " + e.toString());
   }
 }
 
 function OtorisasiGoogleDocs() {
-  // Fungsi pancingan agar Google memunculkan popup Review Permissions
   var tesFile = DocumentApp.create("File_Pancingan_Otorisasi");
-  tesFile.setTrashed(true); // Langsung dibuang ke tempat sampah
-  Logger.log("✅ Izin Google Docs berhasil diberikan!");
+  tesFile.setTrashed(true);
+  Logger.log("✅ Izin Google Docs berhasil.");
 }
-

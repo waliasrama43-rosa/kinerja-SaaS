@@ -1,45 +1,118 @@
 // ====================================================================
-// FILE 04: ENGINE UTAMA UTK INTERAKSI & ALUR KERJA KLIEN (REVISI V5)
+// FILE 04: ENGINE UTAMA INTERAKSI & ALUR KERJA KLIEN (REVISI V6)
 // ====================================================================
 
 function prosesFiturKlienSaaS(update, config, token) {
-  var chatId = (update.message ? update.message.chat.id : update.callback_query.message.chat.id).toString();
-  var username = update.message ? (update.message.from.username ? "@" + update.message.from.username : update.message.from.first_name) : "";
-  
-  var klien = cariAtauDaftarKlienSaaS(chatId, update.message ? update.message.from.first_name : "");
-  var sapaan = (klien.Status_Akses === "BELUM_DAFTAR" || klien.Status_Akses === "REG_WIZARD") ? username : klien.Nama_Pendaftar;
+  var chatId   = (update.message
+    ? update.message.chat.id
+    : update.callback_query.message.chat.id).toString();
+
+  var klien   = cariAtauDaftarKlienSaaS(
+    chatId,
+    update.message ? update.message.from.first_name : ""
+  );
+  var sapaan  = getSapaan(klien.Nama_Pendaftar);
 
   if (update.message && update.message.text) {
     var text = update.message.text.trim();
 
-    // 1. PENANGANAN PERINTAH UTAMA
+    // ── 1. PERINTAH UTAMA ──────────────────────────────────────────
     if (text === "/start" || text === "/lapor") {
+
+      // Belum daftar → mulai wizard
       if (klien.Status_Akses === "BELUM_DAFTAR") {
         perbaruiKolomKlien(chatId, "State_Sesi", "REG_TUNGGU_NAMA");
-        kirimPesanSaaS(chatId, "👋 Halo " + sapaan + "!\n\nSelamat datang di platform premium *Kinerja RHK*. Akun Anda belum terdaftar di sistem kami.\n\nYuk, kita mulai pendaftaran instan terlebih dahulu. Silakan ketik *Nama Lengkap beserta Gelar resmi* Anda, Pak/Bu: 👇", null, token);
-        return;
-      }
-      if (klien.Status_Akses === "REG_WIZARD" || klien.Status_Akses === "PENDING_RHK") {
-        kirimPesanSaaS(chatId, "✨ Halo Pak/Bu *" + sapaan + "*!\n\nPendaftaran Anda sudah kami amankan. Saat ini Admin sedang melakukan verifikasi berkas dan mengonfigurasi susunan menu RHK khusus untuk Anda. Mohon ditunggu ya, kami akan segera memberikan notifikasi jika sistem sudah siap! 🥰", null, token);
-        return;
-      }
-      if (klien.Status_Akses !== "AKTIF") {
-        kirimPesanSaaS(chatId, "🔒 Mohon maaf, status akses akun Anda saat ini sedang dinonaktifkan oleh Admin. Silakan hubungi Admin untuk bantuan aktivasi.", null, token);
-        return;
-      }
-      if (new Date() > new Date(klien.Masa_Aktif)) {
-        kirimPesanSaaS(chatId, "⏰ Oh tidak! Masa aktif paket premium Anda telah berakhir pada " + Utilities.formatDate(new Date(klien.Masa_Aktif), "GMT+7", "dd/MM/yyyy") + ".\n\nYuk, lakukan perpanjangan lisensi Anda terlebih dahulu dengan mengetik /bayar atau /langganan 💎", null, token);
-        return;
-      }
-      if (parseInt(klien.Limit_Harian) <= 0) {
-        kirimPesanSaaS(chatId, "🛑 Wah, Anda sangat produktif hari ini! Namun jatah Anda telah mencapai *Limit Maksimal* untuk hari ini. Silakan kembali melakukan pelaporan besok hari setelah pukul 00:01 malam ya, Pak/Bu! 🌟", null, token);
+        kirimPesanSaaS(chatId,
+          "👋 Halo! Selamat datang di *Kinerja RHK* — platform pelaporan " +
+          "harian otomatis langsung dari Telegram.\n\n" +
+          "Akun Anda belum terdaftar. Mari kita mulai pendaftaran singkat.\n\n" +
+          "Silakan ketikkan *Nama Lengkap beserta Gelar* Anda: 👇",
+          null, token);
         return;
       }
 
-      var props = PropertiesService.getUserProperties();
-      var keys = props.getKeys();
-      for (var i = 0; i < keys.length; i++) { if (keys[i].indexOf(chatId) === 0) props.deleteProperty(keys[i]); }
-      
+      // Sedang dalam proses registrasi wizard
+      if (klien.Status_Akses === "REG_WIZARD") {
+        var kbLanjutReg = {"inline_keyboard": [
+          [{"text": "🔄 Lanjutkan Pendaftaran", "callback_data": "REG_LANJUT"}],
+          [tombolHubungiAdminWA()]
+        ]};
+        kirimPesanSaaS(chatId,
+          "⏳ *Pendaftaran " + sapaan + " sedang diproses.*\n\n" +
+          "Admin sedang memverifikasi berkas dan menyiapkan konfigurasi menu RHK. " +
+          "Notifikasi akan dikirimkan begitu sistem siap digunakan.\n\n" +
+          "Jika ada pertanyaan, silakan hubungi Admin langsung.",
+          kbLanjutReg, token);
+        return;
+      }
+
+      // Menunggu admin konfigurasi template → arahkan kirim .docx
+      if (klien.Status_Akses === "PENDING_RHK") {
+        var kbPending = {"inline_keyboard": [
+          [{"text": "📄 Kirim File Template .docx", "callback_data": "PENDING_INFO_TEMPLATE"}],
+          [tombolHubungiAdminWA()]
+        ]};
+        kirimPesanSaaS(chatId,
+          "⚙️ *Konfigurasi Menu Sedang Disiapkan*\n\n" +
+          "Halo *" + sapaan + "*, pembayaran sudah terverifikasi! 🎉\n\n" +
+          "Saat ini Admin sedang menyiapkan menu RHK berdasarkan template dokumen " +
+          "laporan *" + sapaan + "*.\n\n" +
+          "Jika belum mengirimkan file template *(.docx)*, silakan kirimkan sekarang " +
+          "langsung ke chat ini — sistem akan meneruskannya ke Admin secara otomatis.",
+          kbPending, token);
+        return;
+      }
+
+      // Akun nonaktif/diblokir
+      if (klien.Status_Akses !== "AKTIF") {
+        var kbNonaktif = {"inline_keyboard": [
+          [{"text": "💎 Perpanjang Langganan", "callback_data": "SHORTCUT_BAYAR"}],
+          [tombolHubungiAdminWA()]
+        ]};
+        kirimPesanSaaS(chatId,
+          "🔒 *Akses akun " + sapaan + " saat ini dinonaktifkan.*\n\n" +
+          "Silakan hubungi Admin atau lakukan perpanjangan untuk mengaktifkan kembali.",
+          kbNonaktif, token);
+        return;
+      }
+
+      // Masa aktif habis
+      if (new Date() > new Date(klien.Masa_Aktif)) {
+        var kbExpired = {"inline_keyboard": [
+          [{"text": "💎 Perpanjang Sekarang", "callback_data": "SHORTCUT_BAYAR"}],
+          [tombolHubungiAdminWA()]
+        ]};
+        kirimPesanSaaS(chatId,
+          "⏰ *Masa aktif akun " + sapaan + " telah berakhir.*\n\n" +
+          "Berakhir pada: *" +
+          Utilities.formatDate(new Date(klien.Masa_Aktif), "GMT+7", "dd/MM/yyyy") + "*\n\n" +
+          "Lakukan perpanjangan untuk melanjutkan pelaporan RHK. " +
+          "Semua data & template tetap tersimpan. 💎",
+          kbExpired, token);
+        return;
+      }
+
+      // Limit harian habis
+      if (parseInt(klien.Limit_Harian) <= 0) {
+        var kbLimit = {"inline_keyboard": [
+          [tombolHubungiAdminWA()]
+        ]};
+        kirimPesanSaaS(chatId,
+          "🛑 *Kuota harian " + sapaan + " telah habis.*\n\n" +
+          "Sangat produktif hari ini! Kuota cetak akan direset otomatis " +
+          "besok pukul 00:01. Silakan kembali melaporkan besok. 🌟",
+          kbLimit, token);
+        return;
+      }
+
+      // ✅ Semua validasi lolos → tampilkan menu RHK
+      var props = PropertiesService.getScriptProperties();
+      // Bersihkan session properties lama
+      var allProps = props.getProperties();
+      for (var k in allProps) {
+        if (k.indexOf("sess_" + chatId + "_") === 0) props.deleteProperty(k);
+      }
+
       perbaruiKolomKlien(chatId, "State_Sesi", "PILIH_RHK");
       perbaruiKolomKlien(chatId, "Foto_Count", 0);
       tampilkanMenuRHKKlien(chatId, token);
@@ -51,158 +124,215 @@ function prosesFiturKlienSaaS(update, config, token) {
       return;
     }
 
-    // 2. PENANGANAN SESI INPUT TANGGAL MANUAL
+    // ── 2. SESI INPUT TANGGAL MANUAL ──────────────────────────────
     if (klien.State_Sesi === "TUNGGU_TGL_MANUAL") {
-      var polaTgl = /^(\d{2})\/(\d{2})\/(\d{4})$/; // Format cek DD/MM/YYYY
+      var polaTgl = /^(\d{2})\/(\d{2})\/(\d{4})$/;
       if (polaTgl.test(text)) {
         var parts = text.split("/");
-        var d = new Date(parts[2], parseInt(parts[1]) - 1, parts[0]);
-        var hIndo = ["Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"];
-        var bIndo = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
-        
+        var d     = new Date(parts[2], parseInt(parts[1]) - 1, parts[0]);
+        var hIndo = ["Minggu","Senin","Selasa","Rabu","Kamis","Jumat","Sabtu"];
+        var bIndo = ["Januari","Februari","Maret","April","Mei","Juni",
+                     "Juli","Agustus","September","Oktober","November","Desember"];
         var formatIndo = parts[0] + " " + bIndo[parseInt(parts[1]) - 1] + " " + parts[2];
-        
+
         perbaruiKolomKlien(chatId, "Tanggal_Terpilih", formatIndo);
-        perbaruiKolomKlien(chatId, "Hari_Terpilih", hIndo[d.getDay()]);
-        
+        perbaruiKolomKlien(chatId, "Hari_Terpilih",    hIndo[d.getDay()]);
         kirimPesanSaaS(chatId, "🗓️ Tanggal dikunci: *" + formatIndo + "*", null, token);
         analisisDanMulaiPertanyaanDoc(chatId, token);
       } else {
-        kirimPesanSaaS(chatId, "⚠️ *Format tanggal salah!*\n\nMohon pastikan format yang Anda ketik adalah `DD/MM/YYYY` (contoh: `22/05/2026`).\n\nJika ingin membatalkan, silakan ketik /batal.", null, token);
+        kirimPesanSaaS(chatId,
+          "⚠️ *Format tanggal salah.*\n\n" +
+          "Gunakan format `DD/MM/YYYY` — contoh: `22/05/2026`\n\n" +
+          "Ketik /batal untuk membatalkan.", null, token);
       }
       return;
     }
 
-    // 3. PENANGANAN SESI KUESIONER PERTANYAAN
+    // ── 3. SESI KUESIONER PERTANYAAN ──────────────────────────────
     if (klien.State_Sesi.indexOf("TUNGGU_TAG_") === 0) {
       var tagAktif = klien.State_Sesi.replace("TUNGGU_TAG_", "");
-      PropertiesService.getUserProperties().setProperty(chatId + "_ans_" + tagAktif, text);
+      PropertiesService.getScriptProperties()
+        .setProperty("sess_" + chatId + "_ans_" + tagAktif, text);
       pindahKePertanyaanBerikutnya(chatId, token);
       return;
     }
 
-    // 4. JARING PENGAMAN (FALLBACK / CATCH-ALL) UNTUK TEKS TIDAK DIKENAL
+    // ── 4. FALLBACK — perintah tidak dikenal ──────────────────────
     if (klien.State_Sesi === "") {
-      var fallbackMsg = "🤔 *Maaf, saya tidak mengenali perintah tersebut.*\n\n" +
-                        "Silakan gunakan menu perintah yang tersedia:\n" +
-                        "🔸 `/lapor` - Mulai pelaporan RHK\n" +
-                        "🔸 `/bayar` - Info langganan paket\n" +
-                        "🔸 `/batal` - Batalkan proses saat ini";
-      kirimPesanSaaS(chatId, fallbackMsg, null, token);
+      // Notif senyap ke admin
+      var configFb = ambilKonfigurasiSaaS();
+      kirimPesanSaaS(configFb.ADMIN_CHAT_ID,
+        "🔔 *Perintah Tidak Dikenal*\n\n" +
+        "👤 *" + sapaan + "* (`" + chatId + "`)\n" +
+        "💬 Teks: `" + text + "`\n" +
+        "📌 Status: `" + klien.Status_Akses + "`",
+        null, configFb.BOT_TOKEN);
+
+      var kbFallback = {"inline_keyboard": [
+        [{"text": "📋 Mulai Laporan RHK",       "callback_data": "SHORTCUT_LAPOR"}],
+        [{"text": "💎 Info & Perpanjang Paket",  "callback_data": "SHORTCUT_BAYAR"}],
+        [tombolHubungiAdminWA()]
+      ]};
+      kirimPesanSaaS(chatId,
+        "🤔 *Perintah tidak dikenali.*\n\n" +
+        "Gunakan menu di bawah atau perintah:\n" +
+        "▪️ `/lapor` — Mulai pelaporan RHK\n" +
+        "▪️ `/bayar` — Info & perpanjang langganan\n" +
+        "▪️ `/batal` — Batalkan proses saat ini",
+        kbFallback, token);
+
     } else {
-      var warningMsg = "⚠️ *Anda masih dalam sesi pengisian data (" + klien.State_Sesi + ").*\n\n" +
-                       "Mohon ikuti instruksi bot yang terakhir, atau ketik `/batal` jika Anda ingin mereset dan mengulang dari awal.";
-      kirimPesanSaaS(chatId, warningMsg, null, token);
+      // Masih di tengah sesi
+      var kbSesi = {"inline_keyboard": [
+        [{"text": "🔄 Batalkan & Mulai Ulang", "callback_data": "SHORTCUT_BATAL"}],
+        [tombolHubungiAdminWA()]
+      ]};
+      kirimPesanSaaS(chatId,
+        "⚠️ *Masih dalam sesi pengisian data.*\n\n" +
+        "Ikuti instruksi terakhir bot, atau tekan *Batalkan* untuk mengulang dari awal.",
+        kbSesi, token);
     }
     return;
   }
 }
 
-// [Fungsi tampilkanMenuRHKKlien, tampilkanMenuTanggalSaaS, analisisDanMulaiPertanyaanDoc, pindahKePertanyaanBerikutnya, lompatKeFaseFoto, tampilkanMenuPaketKomersial tetap utuh di bawah sini]
+// ====================================================================
+// MENU & ALUR KERJA
+// ====================================================================
 
 function tampilkanMenuRHKKlien(chatId, token) {
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("RHK_Config");
-  var data = sheet.getDataRange().getValues();
+  var sheet   = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("RHK_Config");
+  var data    = sheet.getDataRange().getValues();
+  var klien   = cariAtauDaftarKlienSaaS(chatId, "");
+  var sapaan  = getSapaan(klien.Nama_Pendaftar);
   var buttons = [];
-  
+
   var userRhk = [];
   for (var i = 1; i < data.length; i++) {
     if (data[i][0].toString() === chatId.toString()) {
-      userRhk.push({ id: data[i][1], label: data[i][2], emoji: data[i][3], urut: data[i][9] });
+      userRhk.push({id: data[i][1], label: data[i][2], emoji: data[i][3], urut: data[i][9]});
     }
   }
   userRhk.sort(function(a, b) { return a.urut - b.urut; });
-  
   userRhk.forEach(function(item) {
-    buttons.push([{"text": item.emoji + " " + item.label, "callback_data": "RUN_RHK_" + item.id}]);
+    buttons.push([{"text": item.emoji + "  " + item.label, "callback_data": "RUN_RHK_" + item.id}]);
   });
-  
+
   if (buttons.length === 0) {
-    kirimPesanSaaS(chatId, "⚠️ *Menu RHK Belum Siap!* Admin sedang merakit konfigurasi template dokumen Anda. Mohon hubungi Admin untuk mempercepat proses. 🙏", null, token);
+    var kbBelumSiap = {"inline_keyboard": [
+      [tombolHubungiAdminWA()]
+    ]};
+    kirimPesanSaaS(chatId,
+      "⚙️ *Menu RHK " + sapaan + " sedang disiapkan.*\n\n" +
+      "Admin sedang mengonfigurasi template dokumen. " +
+      "Notifikasi akan dikirimkan begitu menu siap digunakan. 🙏",
+      kbBelumSiap, token);
   } else {
-    kirimPesanSaaS(chatId, "📋 *Silakan pilih salah satu RHK Kerja yang ingin Anda laporkan hari ini, Pak/Bu:*", {"inline_keyboard": buttons}, token);
+    kirimPesanSaaS(chatId,
+      "📋 *Pilih RHK yang ingin dilaporkan hari ini, " + sapaan + ":*",
+      {"inline_keyboard": buttons}, token);
   }
 }
 
 function tampilkanMenuTanggalSaaS(chatId, token) {
-  var rows = [], hIndo = ["Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"], bIndo = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
+  var rows  = [];
+  var hIndo = ["Minggu","Senin","Selasa","Rabu","Kamis","Jumat","Sabtu"];
+  var bIndo = ["Januari","Februari","Maret","April","Mei","Juni",
+               "Juli","Agustus","September","Oktober","November","Desember"];
+
   for (var i = 0; i < 6; i++) {
-    var d = new Date(); d.setDate(d.getDate() - i);
+    var d    = new Date(); d.setDate(d.getDate() - i);
     var tglF = d.getDate() + " " + bIndo[d.getMonth()] + " " + d.getFullYear();
-    var lbl = (i === 0) ? "📅 Hari Ini (" + hIndo[d.getDay()] + ")" : (i === 1) ? "🗓️ Kemarin (" + hIndo[d.getDay()] + ")" : "📆 " + hIndo[d.getDay()] + ", " + tglF;
+    var lbl  = i === 0 ? "📅 Hari Ini (" + hIndo[d.getDay()] + ")"
+             : i === 1 ? "🗓️ Kemarin (" + hIndo[d.getDay()] + ")"
+             : "📆 " + hIndo[d.getDay()] + ", " + tglF;
     rows.push([{"text": lbl, "callback_data": "SET_TGL_" + tglF + "_" + hIndo[d.getDay()]}]);
   }
   rows.push([{"text": "⌨️ Input Tanggal Manual", "callback_data": "SET_TGL_MANUAL"}]);
-  kirimPesanSaaS(chatId, "🕒 *Pilih Tanggal Pelaksanaan Kegiatan:*", {"inline_keyboard": rows}, token);
+
+  kirimPesanSaaS(chatId,
+    "🕒 *Pilih tanggal pelaksanaan kegiatan:*",
+    {"inline_keyboard": rows}, token);
 }
 
 function analisisDanMulaiPertanyaanDoc(chatId, token) {
   try {
-    var klien = cariAtauDaftarKlienSaaS(chatId, "");
-    var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("RHK_Config");
-    var data = sheet.getDataRange().getValues();
+    var klien      = cariAtauDaftarKlienSaaS(chatId, "");
+    var sheet      = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("RHK_Config");
+    var data       = sheet.getDataRange().getValues();
     var templateId = "";
-    
+
     for (var i = 1; i < data.length; i++) {
       if (data[i][0].toString() === chatId.toString() && data[i][1] === klien.RHK_Terpilih) {
         templateId = data[i][4]; break;
       }
     }
-    
-    var docText = DocumentApp.openById(templateId).getBody().getText();
-    var regex = /\{\{([A-Za-z0-9_]+)\}\}/g;
+
+    var docText  = DocumentApp.openById(templateId).getBody().getText();
+    var regex    = /\{\{([A-Za-z0-9_]+)\}\}/g;
     var daftarTag = [];
     var match;
-    
+    var SKIP_TAGS = ["HARI","TANGGAL","FOTO1","FOTO2","FOTO3","FOTO4"];
+
     while ((match = regex.exec(docText)) !== null) {
       var tag = match[1];
-      if (["HARI", "TANGGAL", "FOTO1", "FOTO2", "FOTO3", "FOTO4"].indexOf(tag) === -1 && daftarTag.indexOf(tag) === -1) {
+      if (SKIP_TAGS.indexOf(tag) === -1 && daftarTag.indexOf(tag) === -1) {
         daftarTag.push(tag);
       }
     }
-    
-    var props = PropertiesService.getUserProperties();
-    props.setProperty(chatId + "_list_tags", daftarTag.join(","));
-    props.setProperty(chatId + "_current_tag_idx", "0");
-    
+
+    var props = PropertiesService.getScriptProperties();
+    props.setProperty("sess_" + chatId + "_list_tags",        daftarTag.join(","));
+    props.setProperty("sess_" + chatId + "_current_tag_idx",  "0");
+
     pindahKePertanyaanBerikutnya(chatId, token);
   } catch(e) {
     var logSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Log_Sistem");
-    if (logSheet) logSheet.appendRow([new Date(), "ERROR BACA DOC", "ChatID: " + chatId + " | Error: " + e.toString()]);
-    kirimPesanSaaS(chatId, "⚠️ *Gagal membaca pola template RHK.* \n\nKemungkinan file template masih berformat Word (.docx) atau ID Template salah. Admin telah menerima log error ini.", null, token);
+    if (logSheet) logSheet.appendRow([new Date(), "ERROR_BACA_DOC",
+      "ChatID: " + chatId + " | " + e.toString()]);
+
+    var kbErrTemplate = {"inline_keyboard": [
+      [tombolHubungiAdminWA()]
+    ]};
+    kirimPesanSaaS(chatId,
+      "⚠️ *Gagal membaca template RHK.*\n\n" +
+      "Kemungkinan file template masih berformat `.docx` atau ID template tidak valid. " +
+      "Admin telah menerima notifikasi error ini.",
+      kbErrTemplate, token);
   }
 }
 
 function pindahKePertanyaanBerikutnya(chatId, token) {
-  var props = PropertiesService.getUserProperties();
-  var listTagsStr = props.getProperty(chatId + "_list_tags") || "";
-  var idx = parseInt(props.getProperty(chatId + "_current_tag_idx") || "0");
-  
-  if (listTagsStr === "") {
-    lompatKeFaseFoto(chatId, token); return;
-  }
-  
+  var props       = PropertiesService.getScriptProperties();
+  var listTagsStr = props.getProperty("sess_" + chatId + "_list_tags") || "";
+  var idx         = parseInt(props.getProperty("sess_" + chatId + "_current_tag_idx") || "0");
+
+  if (listTagsStr === "") { lompatKeFaseFoto(chatId, token); return; }
+
   var tags = listTagsStr.split(",");
   if (idx < tags.length) {
     var tagSekarang = tags[idx];
     perbaruiKolomKlien(chatId, "State_Sesi", "TUNGGU_TAG_" + tagSekarang);
-    props.setProperty(chatId + "_current_tag_idx", (idx + 1).toString());
-    
+    props.setProperty("sess_" + chatId + "_current_tag_idx", (idx + 1).toString());
+
     var kamusSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Kamus_Placeholder");
-    var kData = kamusSheet.getDataRange().getValues();
-    var kalimatTanya = "Mohon isi informasi untuk kolom *" + tagSekarang + "*:";
-    
+    var kData      = kamusSheet.getDataRange().getValues();
+    var kalimatTanya = "Mohon isi data untuk kolom *" + tagSekarang + "*:";
+
     for (var i = 1; i < kData.length; i++) {
       if (kData[i][0].toString().toUpperCase() === tagSekarang.toUpperCase()) {
         kalimatTanya = kData[i][1]; break;
       }
     }
-    
+
     var kbOpsi = {"inline_keyboard": [
-      [{"text": "⚠️ Laporkan Salah Setting Admin", "callback_data": "KOMPLAIN_TAG_" + tagSekarang}]
+      [{"text": "⚠️ Laporkan Kesalahan Template", "callback_data": "KOMPLAIN_TAG_" + tagSekarang}],
+      [tombolHubungiAdminWA()]
     ]};
-    
-    kirimPesanSaaS(chatId, "✨ *Pertanyaan " + (idx + 1) + "/" + tags.length + ":*\n" + kalimatTanya, kbOpsi, token);
+    kirimPesanSaaS(chatId,
+      "✏️ *Pertanyaan " + (idx + 1) + "/" + tags.length + ":*\n\n" + kalimatTanya,
+      kbOpsi, token);
+
   } else {
     lompatKeFaseFoto(chatId, token);
   }
@@ -210,15 +340,59 @@ function pindahKePertanyaanBerikutnya(chatId, token) {
 
 function lompatKeFaseFoto(chatId, token) {
   perbaruiKolomKlien(chatId, "State_Sesi", "TUNGGU_FOTO");
-  kirimPesanSaaS(chatId, "📸 *Seluruh data isian teks berhasil disimpan dengan aman!* \n\nSekarang, silakan kirimkan berkas *Foto Bukti Kegiatan ke-1* Anda (Minimal 2 foto, Maksimal 4 foto):", null, token);
+  kirimPesanSaaS(chatId,
+    "✅ *Semua data teks berhasil disimpan!*\n\n" +
+    "Sekarang kirimkan *Foto Bukti Kegiatan ke-1* " +
+    "(minimal 2 foto, maksimal 4 foto):",
+    null, token);
 }
 
 function tampilkanMenuPaketKomersial(chatId, token) {
   var kb = {"inline_keyboard": [
-    [{"text": "💎 Paket 1 Bulan - Rp 10.000", "callback_data": "ORDER_PAKET_1"}],
-    [{"text": "💎 Paket 3 Bulan - Rp 30.000", "callback_data": "ORDER_PAKET_3"}],
-    [{"text": "💎 Paket 6 Bulan - Rp 50.000", "callback_data": "ORDER_PAKET_6"}],
-    [{"text": "💎 Paket 12 Bulan - Rp 100.000", "callback_data": "ORDER_PAKET_12"}]
+    [{"text": "💎 Paket 1 Bulan  — Rp 10.000",  "callback_data": "ORDER_PAKET_1"}],
+    [{"text": "💎 Paket 3 Bulan  — Rp 30.000",  "callback_data": "ORDER_PAKET_3"}],
+    [{"text": "💎 Paket 6 Bulan  — Rp 50.000",  "callback_data": "ORDER_PAKET_6"}],
+    [{"text": "💎 Paket 12 Bulan — Rp 100.000", "callback_data": "ORDER_PAKET_12"}]
   ]};
-  kirimPesanSaaS(chatId, "🛍️ *PILIHAN PAKET PREMIUM LAYANAN BOT RHK*\n\nSilakan tentukan durasi masa aktif yang Anda butuhkan, Pak/Bu:", kb, token);
+  kirimPesanSaaS(chatId,
+    "🛍️ *PILIHAN PAKET PREMIUM KINERJA RHK*\n\n" +
+    "Pilih durasi langganan yang sesuai kebutuhan:",
+    kb, token);
+}
+
+// ====================================================================
+// HUBUNGI ADMIN — tampilkan kontak + notif ke admin
+// ====================================================================
+function tampilkanKontakAdmin(chatId, token) {
+  var config  = ambilKonfigurasiSaaS();
+  var klien   = cariAtauDaftarKlienSaaS(chatId, "");
+  var sapaan  = getSapaan(klien.Nama_Pendaftar);
+
+  // Dua tombol WA dengan konteks berbeda
+  var urlWAUmum = "https://wa.me/" + SAAS_CONFIG.ADMIN_WHATSAPP_NO +
+    "?text=" + encodeURIComponent(
+      "Halo Admin Kinerja RHK, saya " + (klien.Nama_Pendaftar || "pengguna baru") +
+      " membutuhkan bantuan terkait sistem RHK.");
+  var urlWATelegram = "https://t.me/" + SAAS_CONFIG.ADMIN_TELEGRAM.replace("@", "");
+
+  var kbKontak = {"inline_keyboard": [
+    [{"text": "📲  Chat via WhatsApp",  "url": urlWAUmum}],
+    [{"text": "✈️  Chat via Telegram",  "url": urlWATelegram}]
+  ]};
+
+  kirimPesanSaaS(chatId,
+    "📞 *Hubungi Admin Kinerja RHK*\n\n" +
+    "Halo *" + sapaan + "*! Tim Admin siap membantu.\n\n" +
+    "Pilih saluran komunikasi yang paling nyaman:\n\n" +
+    "🕐 _Jam layanan: Senin–Jumat, 08.00–17.00 WIB_",
+    kbKontak, token);
+
+  // Notif ke admin
+  kirimPesanSaaS(config.ADMIN_CHAT_ID,
+    "🔔 *Klien Meminta Bantuan*\n\n" +
+    "👤 *" + (klien.Nama_Pendaftar || "—") + "* (`" + chatId + "`)\n" +
+    "📌 Status: `" + klien.Status_Akses + "`\n" +
+    "🕐 " + Utilities.formatDate(new Date(), "GMT+7", "dd/MM/yyyy HH:mm") + " WIB\n\n" +
+    "_Klien menekan tombol Hubungi Admin dan sedang menunggu respons._",
+    null, token);
 }
