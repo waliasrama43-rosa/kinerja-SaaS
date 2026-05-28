@@ -368,23 +368,35 @@ function cekDanIngatkanPendaftaranMacet() {
 
 
 // ====================================================================
-// SETUP: PASANG SEMUA TRIGGER
+// SETUP: PASANG SEMUA TRIGGER (TERMASUK QUEUE WORKER)
 // ====================================================================
-// CARA PAKAI:
-//   1. Buka Apps Script Editor (Extensions > Apps Script)
-//   2. Pilih fungsi "pasangSemuaTrigger" di dropdown atas
-//   3. Klik ▶ Run — izinkan akses jika diminta
-//   Selesai! Semua trigger aktif otomatis setiap hari.
+//
+//  Trigger lengkap setelah update ini (5 trigger):
+//
+//  Fungsi                              Jadwal        Keterangan
+//  ────────────────────────────────────────────────────────────────
+//  prosesBatchAntrian                  Tiap 1 menit  Worker queue utama ⭐
+//  resetLimitHarianOtonom              00:00 WIB     Reset kuota cetak
+//  cekDanKirimWarningMasaAktif         08:00 WIB     Warning H-7, H-3, H-0
+//  cekDanAutoBlockExpired              08:30 WIB     Auto-blokir expired
+//  cekDanIngatkanPendaftaranMacet      09:00 WIB     Reminder macet
+//
+//  CARA PAKAI:
+//  1. Buka Apps Script Editor (Extensions > Apps Script)
+//  2. Pilih fungsi "pasangSemuaTrigger" di dropdown atas
+//  3. Klik ▶ Run — izinkan akses jika diminta
+//  Selesai! Semua 5 trigger aktif otomatis.
 // ====================================================================
 function pasangSemuaTrigger() {
   var daftarFungsi = [
+    "prosesBatchAntrian",
     "resetLimitHarianOtonom",
     "cekDanKirimWarningMasaAktif",
     "cekDanAutoBlockExpired",
     "cekDanIngatkanPendaftaranMacet"
   ];
 
-  // Hapus trigger lama agar tidak dobel
+  // Hapus semua trigger lama milik fungsi-fungsi di atas agar tidak dobel
   var existing = ScriptApp.getProjectTriggers();
   for (var x = 0; x < existing.length; x++) {
     if (daftarFungsi.indexOf(existing[x].getHandlerFunction()) !== -1) {
@@ -392,27 +404,74 @@ function pasangSemuaTrigger() {
     }
   }
 
-  // Buat trigger baru
+  // ── 1. Queue Worker: tiap 1 menit ─────────────────────────────
+  // Ini adalah jantung sistem antrian — jangan diubah ke interval lebih lama
+  ScriptApp.newTrigger("prosesBatchAntrian")
+    .timeBased().everyMinutes(1).create();
+
+  // ── 2. Reset limit harian: 00:00 WIB ──────────────────────────
   ScriptApp.newTrigger("resetLimitHarianOtonom")
     .timeBased().atHour(0).nearMinute(1).everyDays(1).create();
 
+  // ── 3. Warning masa aktif: 08:00 WIB ──────────────────────────
   ScriptApp.newTrigger("cekDanKirimWarningMasaAktif")
     .timeBased().atHour(8).nearMinute(0).everyDays(1).create();
 
+  // ── 4. Auto-block expired: 08:30 WIB ──────────────────────────
   ScriptApp.newTrigger("cekDanAutoBlockExpired")
     .timeBased().atHour(8).nearMinute(30).everyDays(1).create();
 
+  // ── 5. Reminder pendaftaran macet: 09:00 WIB ──────────────────
   ScriptApp.newTrigger("cekDanIngatkanPendaftaranMacet")
     .timeBased().atHour(9).nearMinute(0).everyDays(1).create();
 
-  Logger.log("✅ 4 trigger berhasil dipasang:");
-  Logger.log("   • resetLimitHarianOtonom              → 00:00 WIB");
-  Logger.log("   • cekDanKirimWarningMasaAktif          → 08:00 WIB");
-  Logger.log("   • cekDanAutoBlockExpired               → 08:30 WIB");
-  Logger.log("   • cekDanIngatkanPendaftaranMacet       → 09:00 WIB");
+  // Log konfirmasi
+  Logger.log("✅ 5 trigger berhasil dipasang:");
+  Logger.log("   ⭐ prosesBatchAntrian              → tiap 1 menit");
+  Logger.log("   • resetLimitHarianOtonom          → 00:00 WIB");
+  Logger.log("   • cekDanKirimWarningMasaAktif      → 08:00 WIB");
+  Logger.log("   • cekDanAutoBlockExpired           → 08:30 WIB");
+  Logger.log("   • cekDanIngatkanPendaftaranMacet   → 09:00 WIB");
 
   var ls = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Log_Sistem");
-  if (ls) ls.appendRow([new Date(),"TRIGGER_SETUP","4 trigger aktif dipasang."]);
+  if (ls) ls.appendRow([new Date(), "TRIGGER_SETUP",
+    "5 trigger dipasang. Queue worker aktif tiap 1 menit."]);
+}
+
+// ====================================================================
+// SETUP TERPISAH: Pasang hanya trigger queue worker
+// Gunakan ini jika ingin mengaktifkan/mematikan antrian saja
+// tanpa mengganggu trigger harian lainnya
+// ====================================================================
+function pasangTriggerAntrian() {
+  // Hapus worker lama jika ada
+  var existing = ScriptApp.getProjectTriggers();
+  for (var x = 0; x < existing.length; x++) {
+    if (existing[x].getHandlerFunction() === "prosesBatchAntrian") {
+      ScriptApp.deleteTrigger(existing[x]);
+    }
+  }
+  // Buat baru
+  ScriptApp.newTrigger("prosesBatchAntrian")
+    .timeBased().everyMinutes(1).create();
+
+  Logger.log("✅ Trigger antrian (prosesBatchAntrian tiap 1 menit) dipasang.");
+  var ls = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Log_Sistem");
+  if (ls) ls.appendRow([new Date(), "TRIGGER_ANTRIAN", "Worker queue dipasang tiap 1 menit."]);
+}
+
+function nonaktifkanTriggerAntrian() {
+  var existing = ScriptApp.getProjectTriggers();
+  var count    = 0;
+  for (var x = 0; x < existing.length; x++) {
+    if (existing[x].getHandlerFunction() === "prosesBatchAntrian") {
+      ScriptApp.deleteTrigger(existing[x]);
+      count++;
+    }
+  }
+  Logger.log("🛑 " + count + " trigger antrian dihapus.");
+  var ls = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Log_Sistem");
+  if (ls) ls.appendRow([new Date(), "TRIGGER_ANTRIAN", "Worker queue dihentikan (" + count + " trigger dihapus)."]);
 }
 
 // Backward compatibility

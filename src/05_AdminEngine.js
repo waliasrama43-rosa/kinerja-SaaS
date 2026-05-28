@@ -150,6 +150,28 @@ function prosesFiturAdminSaaS(update, config) {
   }
 
 
+  // ── /admin cek_antrian ────────────────────────────────────────────
+  if (text === "/admin cek_antrian") {
+    tampilkanStatusAntrianKeAdmin(chatId, config.BOT_TOKEN);
+    return true;
+  }
+
+  // ── /admin bersihkan_antrian ──────────────────────────────────────
+  if (text === "/admin bersihkan_antrian") {
+    bersihkanAntrianFailed(chatId, config.BOT_TOKEN);
+    return true;
+  }
+
+  // ── /admin reset_antrian ──────────────────────────────────────────
+  // Gunakan jika ada item stuck di PROCESSING > 5 menit
+  if (text === "/admin reset_antrian") {
+    var nReset = resetStuckProcessing();
+    kirimPesanSaaS(chatId,
+      "🔄 Reset selesai. *" + nReset + "* item stuck dikembalikan ke PENDING.",
+      null, config.BOT_TOKEN);
+    return true;
+  }
+
   // ── /admin cek_pendaftaran ────────────────────────────────────────
   if (text === "/admin cek_pendaftaran") {
     var shC  = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Client_SaaS");
@@ -209,8 +231,13 @@ function prosesFiturAdminSaaS(update, config) {
       "📌 *Pintasan:*\n" +
       "   `/admin bantuan` — Daftar semua perintah\n" +
       "   `/admin daftar_chatid` — Semua Chat ID\n" +
-      "   `/admin follow_up_semua` — Klien perlu follow-up";
-    kirimPesanSaaS(chatId, dashboard, null, config.BOT_TOKEN);
+      "   `/admin follow_up_semua` — Klien perlu follow-up\n" +
+      "   `/admin cek_antrian` — Status antrian queue";
+    var kbDashboard = {"inline_keyboard": [
+      [{"text":"🔄 Cek Antrian Queue", "callback_data":"ADM_CEK_ANTRIAN"},
+       {"text":"📋 Cek Pendaftaran",   "callback_data":"ADM_CEK_DAFTAR"}]
+    ]};
+    kirimPesanSaaS(chatId, dashboard, kbDashboard, config.BOT_TOKEN);
     return true;
   }
 
@@ -229,6 +256,10 @@ function prosesFiturAdminSaaS(update, config) {
       "▪️ `/admin kirim_template [ID]` — Kirim template ke klien\n" +
       "▪️ `/admin follow_up [ID]` — Info detail + aksi klien\n" +
       "▪️ `/admin follow_up_semua` — Daftar klien expired/hampir\n\n" +
+      "━━━ *PERINTAH ANTRIAN (QUEUE)* ━━━\n" +
+      "▪️ `/admin cek_antrian` — Status antrian saat ini\n" +
+      "▪️ `/admin bersihkan_antrian` — Hapus item FAILED\n" +
+      "▪️ `/admin reset_antrian` — Reset item stuck PROCESSING\n\n" +
       "━━━ *PERINTAH DARI SHEET* ━━━\n";
     var acSh2 = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Admin_Commands");
     if (acSh2) {

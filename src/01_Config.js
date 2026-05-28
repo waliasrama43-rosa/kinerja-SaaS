@@ -108,6 +108,24 @@ function setupStrukturDatabaseSaaS() {
       ["KESIMPULAN", "Tuliskan kesimpulan akhir atau ringkasan hasil kegiatan: 📊"]
     ],
 
+    // ── Log_Sistem: catatan event & error ────────────────────────
+    "Log_Sistem": [["Timestamp", "Tipe", "Detail"]],
+
+    // ── Antrian_Request: queue engine untuk skalabilitas ─────────
+    // Kolom:
+    //   ID          : ID unik antrian (timestamp + random)
+    //   Timestamp   : waktu masuk antrian
+    //   Chat_ID     : chat ID pengirim
+    //   Tipe_Update : MESSAGE_TEKS | MESSAGE_FOTO | MESSAGE_DOC | CALLBACK
+    //   Payload_JSON: isi lengkap update Telegram (JSON string)
+    //   Status      : PENDING | PROCESSING | DONE | FAILED
+    //   Retry       : jumlah percobaan ulang (max 3)
+    //   Error_Log   : pesan error terakhir jika gagal
+    "Antrian_Request": [[
+      "ID", "Timestamp", "Chat_ID", "Tipe_Update",
+      "Payload_JSON", "Status", "Retry", "Error_Log"
+    ]],
+
     // ── Admin_Commands: perintah dinamis tanpa ubah kode ─────────
     "Admin_Commands": [
       ["Perintah", "Tipe", "Parameter", "Isi_Pesan", "Aktif", "Deskripsi"],
@@ -146,6 +164,34 @@ function setupStrukturDatabaseSaaS() {
     acSh.getRange(1, 1, 1, 6)
         .setBackground("#1a73e8").setFontColor("#ffffff").setFontWeight("bold");
     acSh.setFrozenRows(1);
+  }
+
+  // Style sheet Antrian_Request
+  var aqSh = ss.getSheetByName("Antrian_Request");
+  if (aqSh) {
+    aqSh.getRange(1, 1, 1, 8)
+        .setBackground("#137333").setFontColor("#ffffff").setFontWeight("bold");
+    aqSh.setFrozenRows(1);
+    // Lebar kolom agar mudah dibaca
+    aqSh.setColumnWidth(1, 160);  // ID
+    aqSh.setColumnWidth(2, 160);  // Timestamp
+    aqSh.setColumnWidth(3, 120);  // Chat_ID
+    aqSh.setColumnWidth(4, 130);  // Tipe_Update
+    aqSh.setColumnWidth(5, 400);  // Payload_JSON
+    aqSh.setColumnWidth(6, 100);  // Status
+    aqSh.setColumnWidth(7, 60);   // Retry
+    aqSh.setColumnWidth(8, 300);  // Error_Log
+  }
+
+  // Style sheet Log_Sistem
+  var logSh = ss.getSheetByName("Log_Sistem");
+  if (logSh) {
+    logSh.getRange(1, 1, 1, 3)
+         .setBackground("#b45309").setFontColor("#ffffff").setFontWeight("bold");
+    logSh.setFrozenRows(1);
+    logSh.setColumnWidth(1, 160);
+    logSh.setColumnWidth(2, 140);
+    logSh.setColumnWidth(3, 500);
   }
 }
 
