@@ -616,11 +616,8 @@ function buatInvoiceOtonomSaaS(chatId, durasiBulan, config) {
   props.setProperty("pending_bulan_" + chatId, durasiBulan);
   perbaruiKolomKlien(chatId, "State_Sesi", "TUNGGU_BUKTI_BAYAR");
 
-  // ── Ambil payload QRIS statis: prioritaskan sheet Pengaturan ─────
-  var qrisStatis = (config.QRIS_STATIS &&
-                    config.QRIS_STATIS.toString().replace(/\s+/g, "").indexOf("0002") === 0)
-                   ? config.QRIS_STATIS.toString()
-                   : SAAS_CONFIG.QRIS_STATIS_PAYLOAD;
+  // ── Ambil payload QRIS statis (sheet diprioritaskan, lihat 10_QRIS.js) ──
+  var qrisStatis = ambilPayloadQrisStatis(config);
 
   // ── Coba bangun QRIS DINAMIS (nominal otomatis terisi) ───────────
   var qrisDinamis = null;
