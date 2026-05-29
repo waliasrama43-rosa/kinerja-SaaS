@@ -99,6 +99,51 @@ function prosesFiturAdminSaaS(update, config) {
     return true;
   }
 
+  // ── /admin kirim [ID] [pesan bebas] ───────────────────────────────
+  // Kirim pesan TEKS BEBAS dari admin ke seorang klien hanya dengan Chat_ID.
+  // Syarat: klien harus pernah menekan /start pada bot (semua klien terdaftar sudah).
+  if (text.indexOf("/admin kirim ") === 0) {
+    var sisaKirim = text.substring("/admin kirim ".length).trim();
+    var posSpasi  = sisaKirim.indexOf(" ");
+    if (posSpasi === -1) {
+      kirimPesanSaaS(chatId,
+        "💡 Format: `/admin kirim [Chat_ID] [pesan]`\n" +
+        "Contoh: `/admin kirim 927597163 Halo, mohon lengkapi datanya ya 🙏`",
+        null, config.BOT_TOKEN);
+      return true;
+    }
+    var tujuanId   = sisaKirim.substring(0, posSpasi).trim();
+    var pesanBebas = sisaKirim.substring(posSpasi + 1).trim();
+    if (!pesanBebas) {
+      kirimPesanSaaS(chatId,
+        "⚠️ Pesan kosong. Format: `/admin kirim [Chat_ID] [pesan]`", null, config.BOT_TOKEN);
+      return true;
+    }
+    var klienTujuan = cariAtauDaftarKlienSaaS(tujuanId, "");
+    var resKirim = kirimPesanSaaS(tujuanId,
+      "💬 *Pesan dari Admin Kinerja RHK*\n\n" + pesanBebas,
+      {"inline_keyboard": [[tombolHubungiAdminWA()]]}, config.BOT_TOKEN);
+
+    var berhasilKirim = false, errDesc = "";
+    try {
+      var bodyKirim = JSON.parse(resKirim.getContentText());
+      berhasilKirim = (bodyKirim.ok === true);
+      if (!berhasilKirim) errDesc = bodyKirim.description || "";
+    } catch (eKirim) { berhasilKirim = (resKirim.getResponseCode() === 200); }
+
+    if (berhasilKirim) {
+      kirimPesanSaaS(chatId,
+        "✅ Pesan terkirim ke *" + (klienTujuan.Nama_Pendaftar || "klien") +
+        "* (`" + tujuanId + "`).", null, config.BOT_TOKEN);
+    } else {
+      kirimPesanSaaS(chatId,
+        "❌ Gagal mengirim ke `" + tujuanId + "`.\n_" +
+        (errDesc || "Pastikan Chat_ID benar & klien pernah menekan /start pada bot.") + "_",
+        null, config.BOT_TOKEN);
+    }
+    return true;
+  }
+
   // ── /admin follow_up [ID] ─────────────────────────────────────────
   if (text.indexOf("/admin follow_up ") === 0) {
     tampilkanInfoFollowUp(text.replace("/admin follow_up ", "").trim(), chatId, config);
@@ -366,6 +411,7 @@ function prosesFiturAdminSaaS(update, config) {
       "▪️ `/admin follow_up [ID]` — Info detail + aksi klien\n" +
       "▪️ `/admin follow_up_semua` — Daftar klien expired/hampir\n" +
       "▪️ `/admin ringkasan` — Ringkasan operasional harian\n" +
+      "▪️ `/admin kirim [ID] [pesan]` — Kirim pesan bebas ke klien\n" +
       "▪️ `/admin cek_template [ID]` — Pindai placeholder template klien\n\n" +
       "━━━ *PERINTAH ANTRIAN (QUEUE)* ━━━\n" +
       "▪️ `/admin cek_antrian` — Status antrian saat ini\n" +
