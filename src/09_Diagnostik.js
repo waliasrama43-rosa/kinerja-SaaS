@@ -120,6 +120,7 @@ function cekKesehatanSistem() {
  * LANGKAH 2 — Pasang webhook otomatis ke URL Web App yang sedang aktif.
  * Wajib: Web App sudah di-deploy (Deploy -> New deployment -> Web app,
  * Execute as = Me, Who has access = Anyone).
+ * PENTING: webhook HARUS memakai URL /exec (publik), BUKAN /dev (privat, 401).
  */
 function pasangWebhookOtomatis() {
   var config = ambilKonfigurasiSaaS();
@@ -128,11 +129,41 @@ function pasangWebhookOtomatis() {
     console.log("❌ Web App belum ter-deploy. Deploy dulu sebagai Web app, lalu ulangi.");
     return;
   }
+  // Editor sering mengembalikan URL /dev (privat -> 401). Paksa ke /exec (publik).
+  url = url.replace(/\/dev(\?.*)?$/, "/exec");
+  if (url.indexOf("/exec") === -1) {
+    console.log("⚠️ URL bukan /exec: " + url + "\n" +
+      "Gunakan pasangWebhookManual('URL_EXEC_ANDA') dengan URL dari Deploy -> Manage deployments.");
+    return;
+  }
+  _setWebhook(config.BOT_TOKEN, url);
+}
+
+/**
+ * LANGKAH 2 (alternatif manual) — paling andal.
+ * Salin URL /exec dari menu: Deploy -> Manage deployments -> (deployment Web app)
+ * lalu jalankan: pasangWebhookManual("https://script.google.com/macros/s/XXXX/exec")
+ */
+function pasangWebhookManual(urlExec) {
+  var config = ambilKonfigurasiSaaS();
+  if (!urlExec || urlExec.indexOf("/exec") === -1) {
+    console.log("❌ Masukkan URL yang diakhiri /exec. Contoh:\n" +
+      "   pasangWebhookManual(\"https://script.google.com/macros/s/AKfy.../exec\")");
+    return;
+  }
+  _setWebhook(config.BOT_TOKEN, urlExec);
+}
+
+/** Helper internal: panggil setWebhook Telegram. */
+function _setWebhook(token, url) {
   var res = JSON.parse(UrlFetchApp.fetch(
-    "https://api.telegram.org/bot" + config.BOT_TOKEN + "/setWebhook?url=" + encodeURIComponent(url) +
+    "https://api.telegram.org/bot" + token + "/setWebhook?url=" + encodeURIComponent(url) +
     "&drop_pending_updates=true",
     { muteHttpExceptions: true }).getContentText());
-  console.log("Hasil setWebhook ke " + url + "\n" + JSON.stringify(res, null, 2));
+  console.log("Hasil setWebhook ke:\n  " + url + "\n" + JSON.stringify(res, null, 2));
+  if (res.ok) {
+    console.log("✅ Webhook terpasang. Kirim /start ke bot untuk menguji.");
+  }
 }
 
 /** Lihat status webhook saat ini beserta pesan error terakhir dari Telegram. */
