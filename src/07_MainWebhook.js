@@ -182,8 +182,13 @@ function doPost(e) {
       if (update.message.document) {
         prosesUnduhTemplateWordKlien(chatId, update.message.document, config);
       } else if (update.message.photo) {
-        if (klien.State_Sesi === "TUNGGU_BUKTI_BAYAR") terimaFotoBuktiTransferKlien(chatId, update.message.photo, config);
-        else if (klien.State_Sesi === "TUNGGU_FOTO") terimaFotoLaporanKegiatanKlien(chatId, update.message.photo, config);
+        if (chatId === config.ADMIN_CHAT_ID.toString() && CacheService.getScriptCache().get("ADMIN_WAIT_QRIS")) {
+          prosesQrisImageAdmin(chatId, update.message.photo, config);
+        } else if (klien.State_Sesi === "TUNGGU_BUKTI_BAYAR") {
+          terimaFotoBuktiTransferKlien(chatId, update.message.photo, config);
+        } else if (klien.State_Sesi === "TUNGGU_FOTO") {
+          terimaFotoLaporanKegiatanKlien(chatId, update.message.photo, config);
+        }
       } else {
         prosesFiturKlienSaaS(update, config, token);
       }

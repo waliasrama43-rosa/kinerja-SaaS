@@ -7,10 +7,15 @@ function prosesFiturAdminSaaS(update, config) {
   var text = update.message.text ? update.message.text.trim() : "";
 
   // SIMPAN PAYLOAD QRIS STATIS UNTUK QRIS DINAMIS OTOMATIS
+  if (text === "/admin set_qris" || text === "/admin setqris") {
+    CacheService.getScriptCache().put("ADMIN_WAIT_QRIS", "1", 600);
+    kirimPesanSaaS(chatId, "📷 *MODE PASANG QRIS*\n\nSilakan *kirim foto/gambar QRIS DANA Bisnis* Anda ke chat ini sekarang. Sistem akan membacanya secara otomatis dan menyimpannya. (Berlaku 10 menit)\n\n_Atau jika Anda punya teks payload-nya, kirim:_ `/admin set_qris 00020101...`", null, config.BOT_TOKEN);
+    return true;
+  }
   if (text.indexOf("/admin set_qris ") === 0) {
     var qrisStr = text.replace("/admin set_qris ", "").trim();
     if (qrisStr.length < 20 || qrisStr.indexOf("0002") !== 0) {
-      kirimPesanSaaS(chatId, "❌ *Payload QRIS tidak valid.*\nPayload QRIS statis biasanya diawali `0002` dan cukup panjang. Salin teks mentah dari QRIS Anda (bisa didapat dgn memindai QRIS pakai aplikasi pembaca QR), lalu kirim:\n`/admin set_qris 00020101...`", null, config.BOT_TOKEN);
+      kirimPesanSaaS(chatId, "❌ *Payload QRIS tidak valid.*\nPayload QRIS statis biasanya diawali `0002` dan cukup panjang. Lebih mudah: cukup kirim perintah `/admin set_qris` (tanpa teks), lalu kirim *foto QRIS* Anda.", null, config.BOT_TOKEN);
       return true;
     }
     simpanKonfigurasiSaaS("QRIS_STATIC_STRING", qrisStr);
@@ -289,4 +294,44 @@ function eksekusiApprovePembayaranKlien(callbackDataStr, config) {
 function eksekusiRejectPembayaranKlien(targetId, config) {
   kirimPesanSaaS(config.ADMIN_CHAT_ID.toString(), "❌ Transaksi untuk ID `" + targetId + "` berhasil ditolak sepihak.", null, config.BOT_TOKEN);
   kirimPesanSaaS(targetId, "🛑 *Konfirmasi Pembayaran Ditolak* 🛑\n\nMohon maaf, bukti transfer yang Anda kirimkan dinyatakan *Tidak Valid* oleh Admin setelah pemeriksaan mutasi. Silakan lakukan pemesanan ulang dengan mengetik /bayar dan pastikan nominal transfer sesuai.", null, config.BOT_TOKEN);
+}
+
+
+// ====================================================================
+// PEMBACA QRIS DARI FOTO (ADMIN): foto QRIS -> teks payload -> simpan
+// ====================================================================
+function prosesQrisImageAdmin(chatId, photoArray, config) {
+  CacheService.getScriptCache().remove("ADMIN_WAIT_QRIS");
+  try {
+    var fileId = photoArray[photoArray.length - 1].file_id;
+    var fileRes = UrlFetchApp.fetch("https://api.telegram.org/bot" + config.BOT_TOKEN + "/getFile?file_id=" + fileId);
+    var filePath = JSON.parse(fileRes.getContentText()).result.file_path;
+    var blob = UrlFetchApp.fetch("https://api.telegram.org/file/bot" + config.BOT_TOKEN + "/" + filePath).getBlob();
+
+    // Baca isi QR dari gambar via API.
+    var resp = UrlFetchApp.fetch("https://api.qrserver.com/v1/read-qr-code/", {
+      "method": "post", "payload": { "file": blob }, "muteHttpExceptions": true
+    });
+    var json = JSON.parse(resp.getContentText());
+    var payload = (json && json[0] && json[0].symbol && json[0].symbol[0]) ? json[0].symbol[0].data : null;
+
+    if (!payload || String(payload).indexOf("0002") !== 0) {
+      kirimPesanSaaS(chatId, "❌ *Gagal membaca QRIS dari gambar.*\nPastikan foto QRIS jelas/tidak buram dan tidak terpotong, lalu kirim perintah `/admin set_qris` lagi dan ulangi mengirim fotonya.", null, config.BOT_TOKEN);
+      return;
+    }
+
+    payload = String(payload).trim();
+    simpanKonfigurasiSaaS("QRIS_STATIC_STRING", payload);
+
+    var contoh;
+    try { contoh = buatQrisDinamis(payload, 10123); }
+    catch (eC) {
+      kirimPesanSaaS(chatId, "⚠️ QRIS terbaca & tersimpan, tetapi gagal membuat contoh dinamis: " + eC.toString() + "\n\nPayload:\n`" + payload + "`", null, config.BOT_TOKEN);
+      return;
+    }
+
+    kirimPesanSaaS(chatId, "✅ *QRIS DANA Bisnis berhasil dibaca & disimpan!*\n\nMulai sekarang setiap invoice memakai *QRIS dinamis* (nominal otomatis tertera).\n\n📄 Payload tersimpan:\n`" + payload + "`\n\n🧪 Contoh dinamis (Rp 10.123):\n`" + contoh + "`", null, config.BOT_TOKEN);
+  } catch (err) {
+    kirimPesanSaaS(chatId, "⚠️ Terjadi kesalahan saat membaca QRIS: " + err.toString() + "\n\nCoba kirim `/admin set_qris` lagi lalu ulangi.", null, config.BOT_TOKEN);
+  }
 }
