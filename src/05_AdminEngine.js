@@ -165,6 +165,13 @@ function prosesUnduhTemplateWordKlien(chatId, documentObj, config) {
 // ====================================================================
 
 function buatInvoiceOtonomSaaS(chatId, durasiBulan, config) {
+  // Pengaman anti klik-ganda: jika invoice paket yang sama baru saja dikirim
+  // (dalam 45 detik), jangan kirim QRIS lagi. Mencegah QRIS terkirim 2x.
+  var cacheInv = CacheService.getScriptCache();
+  var kunciInv = "inv_" + chatId + "_" + durasiBulan;
+  if (cacheInv.get(kunciInv)) { return; }
+  cacheInv.put(kunciInv, "1", 45);
+
   var hargaAwal = { "1": 10000, "3": 30000, "6": 50000, "12": 100000 }[durasiBulan];
   var kodeUnik = Math.floor(Math.random() * 900) + 100; // 3 Digit Acak Sistem
   var nominalTotal = hargaAwal + kodeUnik;
