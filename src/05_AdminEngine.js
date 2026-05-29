@@ -616,46 +616,104 @@ function buatInvoiceOtonomSaaS(chatId, durasiBulan, config) {
   props.setProperty("pending_bulan_" + chatId, durasiBulan);
   perbaruiKolomKlien(chatId, "State_Sesi", "TUNGGU_BUKTI_BAYAR");
 
-  var panduan =
-    "🧾 *INVOICE LISENSI PREMIUM*\n\n" +
-    "▪️ Nama       : *" + (klien.Nama_Pendaftar||"—") + "*\n" +
-    "▪️ Kode Order : `" + trxId + "`\n" +
-    "▪️ Paket      : *" + durasiBulan + " Bulan*\n" +
-    "▪️ Harga Dasar: `Rp " + hargaAwal.toLocaleString("id-ID") + "`\n" +
-    "▪️ Kode Unik  : `+" + kodeUnik + "`\n" +
-    "━━━━━━━━━━━━━━━━━━━━\n" +
-    "💰 *TOTAL TRANSFER:*\n" +
-    "   `Rp " + nominalTotal.toLocaleString("id-ID") + "`\n" +
-    "━━━━━━━━━━━━━━━━━━━━\n\n" +
-    "📌 Transfer nominal *persis* termasuk 3 digit kode unik.\n" +
-    "Sistem akan memverifikasi otomatis.\n\n" +
-    "1️⃣ Scan QRIS di bawah ini\n" +
-    "2️⃣ Masukkan nominal *Rp " + nominalTotal.toLocaleString("id-ID") + "* secara manual\n" +
-    "3️⃣ Kirim *screenshot bukti pembayaran* ke chat ini";
+  // ── Ambil payload QRIS statis: prioritaskan sheet Pengaturan ─────
+  var qrisStatis = (config.QRIS_STATIS &&
+                    config.QRIS_STATIS.toString().replace(/\s+/g, "").indexOf("0002") === 0)
+                   ? config.QRIS_STATIS.toString()
+                   : SAAS_CONFIG.QRIS_STATIS_PAYLOAD;
 
-  var blobQris = DriveApp.getFileById(SAAS_CONFIG.QRIS_FILE_ID).getBlob();
-  UrlFetchApp.fetch("https://api.telegram.org/bot" + config.BOT_TOKEN + "/sendPhoto",
-    {"method":"post","payload":{"chat_id":chatId,"photo":blobQris,
-     "caption":panduan,"parse_mode":"Markdown"}});
-
-  // QR nominal dinamis
+  // ── Coba bangun QRIS DINAMIS (nominal otomatis terisi) ───────────
+  var qrisDinamis = null;
   try {
-    var urlQR = "https://api.qrserver.com/v1/create-qr-code/?size=300x300&margin=10&data=" +
-      encodeURIComponent("NOMINAL: Rp " + nominalTotal.toLocaleString("id-ID") +
-                         " | KODE: " + trxId);
-    var blobQR = UrlFetchApp.fetch(urlQR, {"muteHttpExceptions":true}).getBlob();
-    UrlFetchApp.fetch("https://api.telegram.org/bot" + config.BOT_TOKEN + "/sendPhoto",
-      {"method":"post","payload":{
-        "chat_id":chatId,"photo":blobQR,
-        "caption":"📋 *QR Panduan Nominal*\nTotal: `Rp " +
-          nominalTotal.toLocaleString("id-ID") + "`\nKode: `" + trxId + "`",
-        "parse_mode":"Markdown"
-      }});
-  } catch(eQR) {
-    kirimPesanSaaS(chatId,
-      "📋 Total transfer: *Rp " + nominalTotal.toLocaleString("id-ID") + "*\nKode: `" + trxId + "`",
-      null, config.BOT_TOKEN);
+    if (qrisStatis) qrisDinamis = buatQrisDinamis(qrisStatis, nominalTotal);
+  } catch (eGen) {
+    qrisDinamis = null;
+    _logSistem("ERR_QRIS_DINAMIS", "ChatID: " + chatId + " | " + eGen.toString());
   }
+
+  if (qrisDinamis) {
+    // ===== MODE DINAMIS: klien scan → nominal langsung terisi =====
+    var panduanDinamis =
+      "🧾 *INVOICE LISENSI PREMIUM*\n\n" +
+      "▪️ Nama       : *" + (klien.Nama_Pendaftar||"—") + "*\n" +
+      "▪️ Kode Order : `" + trxId + "`\n" +
+      "▪️ Paket      : *" + durasiBulan + " Bulan*\n" +
+      "▪️ Harga Dasar: `Rp " + hargaAwal.toLocaleString("id-ID") + "`\n" +
+      "▪️ Kode Unik  : `+" + kodeUnik + "`\n" +
+      "━━━━━━━━━━━━━━━━━━━━\n" +
+      "💰 *TOTAL TAGIHAN:*\n" +
+      "   `Rp " + nominalTotal.toLocaleString("id-ID") + "`\n" +
+      "━━━━━━━━━━━━━━━━━━━━\n\n" +
+      "✨ *QRIS sudah berisi nominal otomatis!*\n\n" +
+      "1️⃣ Scan QRIS di bawah ini dengan aplikasi bank / e-wallet\n" +
+      "2️⃣ Pastikan nominal tampil *Rp " + nominalTotal.toLocaleString("id-ID") + "* lalu bayar\n" +
+      "3️⃣ Kirim *screenshot bukti pembayaran* ke chat ini\n\n" +
+      "_Nominal sudah terkunci pada QR — tidak perlu ketik manual._";
+
+    var terkirim = false;
+    try {
+      var urlQRD = "https://api.qrserver.com/v1/create-qr-code/" +
+        "?size=512x512&margin=16&ecc=M&data=" + encodeURIComponent(qrisDinamis);
+      var blobQRD = UrlFetchApp.fetch(urlQRD, {"muteHttpExceptions":true}).getBlob()
+                      .setName("QRIS_" + trxId + ".png");
+      var resQRD = UrlFetchApp.fetch(
+        "https://api.telegram.org/bot" + config.BOT_TOKEN + "/sendPhoto",
+        {"method":"post","payload":{
+          "chat_id":chatId.toString(), "photo":blobQRD,
+          "caption":panduanDinamis, "parse_mode":"Markdown"
+        }, "muteHttpExceptions":true});
+      terkirim = (resQRD.getResponseCode() === 200);
+    } catch (eKirim) {
+      terkirim = false;
+      _logSistem("ERR_KIRIM_QRIS_DINAMIS", "ChatID: " + chatId + " | " + eKirim.toString());
+    }
+
+    if (!terkirim) {
+      // Fallback: kirim payload sebagai teks agar tetap bisa dibayar
+      kirimPesanSaaS(chatId,
+        panduanDinamis + "\n\n⚠️ Gambar QR gagal dimuat. Salin kode QRIS berikut:\n`" +
+        qrisDinamis + "`", null, config.BOT_TOKEN);
+    }
+
+  } else {
+    // ===== MODE FALLBACK: QRIS statis lama (input nominal manual) =====
+    var panduanStatis =
+      "🧾 *INVOICE LISENSI PREMIUM*\n\n" +
+      "▪️ Nama       : *" + (klien.Nama_Pendaftar||"—") + "*\n" +
+      "▪️ Kode Order : `" + trxId + "`\n" +
+      "▪️ Paket      : *" + durasiBulan + " Bulan*\n" +
+      "▪️ Harga Dasar: `Rp " + hargaAwal.toLocaleString("id-ID") + "`\n" +
+      "▪️ Kode Unik  : `+" + kodeUnik + "`\n" +
+      "━━━━━━━━━━━━━━━━━━━━\n" +
+      "💰 *TOTAL TRANSFER:*\n" +
+      "   `Rp " + nominalTotal.toLocaleString("id-ID") + "`\n" +
+      "━━━━━━━━━━━━━━━━━━━━\n\n" +
+      "📌 Transfer nominal *persis* termasuk 3 digit kode unik.\n" +
+      "Sistem akan memverifikasi otomatis.\n\n" +
+      "1️⃣ Scan QRIS di bawah ini\n" +
+      "2️⃣ Masukkan nominal *Rp " + nominalTotal.toLocaleString("id-ID") + "* secara manual\n" +
+      "3️⃣ Kirim *screenshot bukti pembayaran* ke chat ini";
+
+    var blobQris = DriveApp.getFileById(SAAS_CONFIG.QRIS_FILE_ID).getBlob();
+    UrlFetchApp.fetch("https://api.telegram.org/bot" + config.BOT_TOKEN + "/sendPhoto",
+      {"method":"post","payload":{"chat_id":chatId,"photo":blobQris,
+       "caption":panduanStatis,"parse_mode":"Markdown"}});
+
+    // Beritahu admin agar mengisi QRIS_STATIS untuk mengaktifkan mode dinamis
+    _logSistem("QRIS_FALLBACK_STATIS",
+      "ChatID: " + chatId + " | QRIS_STATIS belum dikonfigurasi → pakai QR statis manual.");
+  }
+
+  // ── Notifikasi ke admin: ada tagihan baru menunggu (approve manual) ──
+  kirimPesanSaaS(config.ADMIN_CHAT_ID.toString(),
+    "🧾 *Invoice Baru Dibuat*\n\n" +
+    "👤 *" + (klien.Nama_Pendaftar||"—") + "* (`" + chatId + "`)\n" +
+    "▪️ Paket  : *" + durasiBulan + " Bulan*\n" +
+    "▪️ Nominal: *Rp " + nominalTotal.toLocaleString("id-ID") + "*\n" +
+    "▪️ Kode   : `" + trxId + "` (unik `+" + kodeUnik + "`)\n" +
+    "▪️ Mode QR: " + (qrisDinamis ? "Dinamis ✅" : "Statis (manual) ⚠️") + "\n\n" +
+    "_Menunggu klien mengirim bukti bayar. Cocokkan nominal unik di mutasi lalu Setujui/Tolak._",
+    null, config.BOT_TOKEN);
 }
 
 // ====================================================================
