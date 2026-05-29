@@ -115,6 +115,12 @@ function prosesBatchAntrian() {
   if (!sheet) return;
 
   var config = ambilKonfigurasiSaaS();
+
+  // Eskalasi alert darurat (dering ulang) — jalan tiap menit walau antrian kosong
+  try { prosesAlertDaruratTertunda(config); } catch (eAlert) {
+    _logQueue("ALERT_ERROR", eAlert.toString().substring(0, 200));
+  }
+
   var data   = sheet.getDataRange().getValues();
 
   // Ambil semua baris PENDING, urutkan berdasarkan Timestamp (FIFO)

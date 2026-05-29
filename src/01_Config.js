@@ -8,6 +8,13 @@ const SAAS_CONFIG = {
   ADMIN_WHATSAPP_LINK: "https://wa.me/6285100062524?text=Halo%20Admin%20Kinerja%20RHK%2C%20saya%20butuh%20bantuan%20terkait%20Sistem%20RHK",
   EMAIL_MITRA_EDITOR: "waliasrama.43@gmail.com",
 
+  // ── ALERT DARURAT KE ADMIN ("Ping" ala BBM) ────────────────────
+  // Saat ada klien butuh aksi segera (aktivasi/approve), bot mengirim
+  // notifikasi keras & MENGULANGNYA sampai admin menekan "Stop Alarm".
+  // Override opsional via sheet Pengaturan: ALERT_ULANG_MAX, ALERT_ULANG_INTERVAL_MENIT
+  ALERT_ULANG_MAX           : 5,   // berapa kali diulang bila belum ditangani
+  ALERT_ULANG_INTERVAL_MENIT: 2,   // jeda antar pengingat (menit)
+
   // ID MASTER DRIVE INDUK MILIK ADMIN (Tempat menyimpan template kiriman klien)
   ADMIN_ROOT_FOLDER_ID: "1zisjFNqoSV5RTAp-9ysyHIc7d9eJ2Yfp",
   QRIS_FOLDER_ID      : "1l2pRo9QQKA--44hq8cQ8KNvuNy7FI1hd",
