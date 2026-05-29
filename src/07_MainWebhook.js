@@ -7,13 +7,41 @@ function doPost(e) {
     var config = ambilKonfigurasiSaaS();
     var token = config.BOT_TOKEN;
     var update = JSON.parse(e.postData.contents);
-    
+
+    // ----------------------------------------------------------------
+    // 0. ANTI-GANDA: lewati update yang sudah pernah diproses.
+    //    Telegram mengirim ulang update bila webhook lambat merespon,
+    //    sehingga tanpa ini QRIS/pesan bisa terkirim berkali-kali.
+    // ----------------------------------------------------------------
+    if (update.update_id) {
+      var lock = LockService.getScriptLock();
+      try { lock.waitLock(15000); } catch (eLock) {}
+      var cache = CacheService.getScriptCache();
+      var kunciUpd = "upd_" + update.update_id;
+      if (cache.get(kunciUpd)) {
+        try { lock.releaseLock(); } catch (e3) {}
+        return HtmlService.createHtmlOutput("OK"); // sudah diproses, abaikan
+      }
+      cache.put(kunciUpd, "1", 600); // tandai selama 10 menit
+      try { lock.releaseLock(); } catch (e4) {}
+    }
+
     // ----------------------------------------------------------------
     // 1. DISTRIBUSI KLIK TOMBOL INLINE KEYBOARD (CALLBACK QUERY)
     // ----------------------------------------------------------------
     if (update.callback_query) {
       var chatId = update.callback_query.message.chat.id.toString();
       var data = update.callback_query.data;
+
+      // Beri tahu Telegram bahwa klik tombol sudah diterima (hentikan animasi loading).
+      try {
+        UrlFetchApp.fetch("https://api.telegram.org/bot" + token + "/answerCallbackQuery", {
+          "method": "post", "contentType": "application/json",
+          "payload": JSON.stringify({ "callback_query_id": update.callback_query.id }),
+          "muteHttpExceptions": true
+        });
+      } catch (eCb) {}
+
       var klien = cariAtauDaftarKlienSaaS(chatId, "");
       
       if (data.indexOf("REG_JML_") === 0) {

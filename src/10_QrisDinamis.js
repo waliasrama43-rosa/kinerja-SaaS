@@ -53,20 +53,43 @@ function buatQrisDinamis(qrisStatis, nominal) {
   }
 
   var tlv = _parseTlvQris(s);
+
+  // Cek apakah tag 01 (Point of Initiation Method) ada di payload.
+  var ada01 = false;
+  for (var a = 0; a < tlv.length; a++) { if (tlv[a].tag === "01") ada01 = true; }
+
   var nominalStr = String(Math.round(Number(nominal)));
   var tag54 = "54" + _pad2Qris(nominalStr.length) + nominalStr;
 
-  var out = "", sudahSisip = false;
+  var out = "", sudah54 = false;
   for (var i = 0; i < tlv.length; i++) {
     var t = tlv[i];
-    if (t.tag === "01") { out += "010212"; continue; }   // statis ke dinamis
-    if (t.tag === "54") { continue; }                    // buang nominal lama (akan diganti)
-    if (t.tag === "58" && !sudahSisip) {                 // sisipkan nominal sebelum kode negara
-      out += tag54; sudahSisip = true;
+
+    if (t.tag === "54") { continue; }                 // buang nominal lama (akan diganti)
+
+    if (t.tag === "01") {                             // paksa jadi DINAMIS (12)
+      out += "010212";
+      continue;
     }
-    out += t.tag + _pad2Qris(t.val.length) + t.val;
+
+    out += t.tag + _pad2Qris(t.val.length) + t.val;   // salin tag apa adanya
+
+    // Bila payload tidak punya tag 01, sisipkan tepat setelah tag 00.
+    if (t.tag === "00" && !ada01) { out += "010212"; ada01 = true; }
+
+    // Sisipkan nominal (tag 54) tepat SETELAH tag 53 (mata uang) - sesuai EMVCo.
+    if (t.tag === "53" && !sudah54) { out += tag54; sudah54 = true; }
   }
-  if (!sudahSisip) out += tag54;
+
+  // Cadangan: jika tag 53 tidak ditemukan, sisipkan sebelum tag 58 atau di akhir.
+  if (!sudah54) {
+    var idx58 = out.indexOf("5802");
+    if (idx58 !== -1) {
+      out = out.substring(0, idx58) + tag54 + out.substring(idx58);
+    } else {
+      out += tag54;
+    }
+  }
 
   out += "6304";
   return out + hitungCRC16Qris(out);
@@ -75,8 +98,15 @@ function buatQrisDinamis(qrisStatis, nominal) {
 // Render payload QRIS menjadi blob gambar PNG via API QR.
 function generateBlobQris(payload, apiUrl) {
   var base = apiUrl || "https://api.qrserver.com/v1/create-qr-code/";
-  var url = base + "?size=512x512&margin=15&data=" + encodeURIComponent(payload);
-  return UrlFetchApp.fetch(url, { muteHttpExceptions: true }).getBlob().setName("QRIS_Dinamis.png");
+  // ecc=M & qzone=4 (zona sunyi 4 modul) agar lebih mudah dipindai aplikasi bayar.
+  var url = base + "?size=500x500&ecc=M&qzone=4&format=png&data=" + encodeURIComponent(payload);
+  var resp = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+  var kode = resp.getResponseCode();
+  var ctype = (resp.getHeaders()["Content-Type"] || resp.getHeaders()["content-type"] || "").toString();
+  if (kode !== 200 || ctype.indexOf("image") === -1) {
+    throw new Error("API QR gagal (HTTP " + kode + ", type " + ctype + "): " + resp.getContentText().slice(0, 150));
+  }
+  return resp.getBlob().setName("QRIS_Dinamis.png");
 }
 
 // Uji cepat dari editor: cek payload dinamis terbentuk benar.
