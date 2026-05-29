@@ -58,7 +58,8 @@ function jalankanWizardPendaftaran(chatId, text, state, token) {
     } catch (error) {
       var teksGagal = "❌ *Koneksi Gagal / Akses Ditolak!*\n\n" +
                       "Sistem mendeteksi bahwa folder tersebut belum Anda bagikan sebagai *Editor* ke alamat email: `" + SAAS_CONFIG.EMAIL_MITRA_EDITOR + "`.\n\n" +
-                      "Silakan buka Google Drive Anda, ubah pengaturan berbagi folder tersebut menjadi *Editor* untuk email di atas, lalu kirimkan kembali link foldernya ke sini ya, Pak/Bu. 🙏";
+                      "Silakan buka Google Drive Anda, ubah pengaturan berbagi folder tersebut menjadi *Editor* untuk email di atas, lalu kirimkan kembali link foldernya ke sini ya, Pak/Bu. 🙏\n\n" +
+                      "Butuh bantuan? Hubungi " + linkAdmin() + ".";
       kirimPesanEngine(chatId, teksGagal, null, token);
     }
     return;

@@ -6,6 +6,25 @@ function prosesFiturAdminSaaS(update, config) {
   var chatId = update.message.chat.id.toString();
   var text = update.message.text ? update.message.text.trim() : "";
 
+  // SIMPAN PAYLOAD QRIS STATIS UNTUK QRIS DINAMIS OTOMATIS
+  if (text.indexOf("/admin set_qris ") === 0) {
+    var qrisStr = text.replace("/admin set_qris ", "").trim();
+    if (qrisStr.length < 20 || qrisStr.indexOf("0002") !== 0) {
+      kirimPesanSaaS(chatId, "❌ *Payload QRIS tidak valid.*\nPayload QRIS statis biasanya diawali `0002` dan cukup panjang. Salin teks mentah dari QRIS Anda (bisa didapat dgn memindai QRIS pakai aplikasi pembaca QR), lalu kirim:\n`/admin set_qris 00020101...`", null, config.BOT_TOKEN);
+      return true;
+    }
+    simpanKonfigurasiSaaS("QRIS_STATIC_STRING", qrisStr);
+    var contohDin;
+    try {
+      contohDin = buatQrisDinamis(qrisStr, 10123);
+    } catch (eC) {
+      kirimPesanSaaS(chatId, "⚠️ QRIS tersimpan, namun gagal membentuk contoh dinamis: " + eC.toString(), null, config.BOT_TOKEN);
+      return true;
+    }
+    kirimPesanSaaS(chatId, "✅ *QRIS statis berhasil disimpan!*\nMulai sekarang setiap invoice akan otomatis memakai *QRIS dinamis* (nominal tertanam).\n\nContoh payload dinamis untuk Rp 10.123:\n`" + contohDin + "`", null, config.BOT_TOKEN);
+    return true;
+  }
+
   if (text.indexOf("/admin broadcast ") === 0) {
     var isiPesan = text.replace("/admin broadcast ", "");
     var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Client_SaaS");
@@ -75,7 +94,8 @@ function prosesFiturAdminSaaS(update, config) {
                        "▪️ Total Klien Terdaftar: " + totalUser + " Orang\n" +
                        "▪️ Klien Premium Aktif: " + aktif + " Akun\n" +
                        "▪️ Status Gerbang Server: *ONLINE (Cloudflare)*\n" +
-                       "▪️ Menu Cek Macet: `/admin cek_pendaftaran`";
+                       "▪️ Menu Cek Macet: `/admin cek_pendaftaran`\n" +
+                       "▪️ Set QRIS Dinamis: `/admin set_qris <payload>`";
     kirimPesanSaaS(chatId, statusSistem, null, config.BOT_TOKEN);
     return true;
   }
@@ -152,14 +172,41 @@ function buatInvoiceOtonomSaaS(chatId, durasiBulan, config) {
   props.setProperty(chatId + "_pending_bulan", durasiBulan);
   
   perbaruiKolomKlien(chatId, "State_Sesi", "TUNGGU_BUKTI_BAYAR");
-  
+
+  var qrisStatis = config.QRIS_STATIC_STRING || SAAS_CONFIG.QRIS_STATIC_STRING || "";
+
+  if (qrisStatis) {
+    // ===== MODE QRIS DINAMIS: nominal sudah tertanam, klien tinggal scan =====
+    var nominalFmt = "Rp " + nominalTotal.toLocaleString("id-ID");
+    var panduanDinamis = "🛒 *NOTA INVOICE LISENSI PREMIUM* 🛒\n\n" +
+                         "▪️ Kode Pesanan: `" + trxId + "`\n" +
+                         "▪️ Durasi Paket: *" + durasiBulan + " Bulan*\n" +
+                         "▪️ *TOTAL BAYAR:* `" + nominalFmt + "`\n\n" +
+                         "✅ *QRIS DINAMIS!* Nominal *" + nominalFmt + "* sudah otomatis tertera saat Anda scan — " +
+                         "Anda *tidak perlu* mengetik nominal manual lagi.\n\n" +
+                         "📌 Cukup scan QR di atas, pastikan nominalnya *" + nominalFmt + "*, lalu kirimkan " +
+                         "*foto bukti transfer* Anda ke chat ini ya, Pak/Bu. 🙏";
+    try {
+      var payloadDinamis = buatQrisDinamis(qrisStatis, nominalTotal);
+      var apiUrl = config.QRIS_API_URL || SAAS_CONFIG.QRIS_API_URL;
+      var blobDinamis = generateBlobQris(payloadDinamis, apiUrl);
+      var pLoadDin = { "chat_id": chatId, "photo": blobDinamis, "caption": panduanDinamis, "parse_mode": "Markdown" };
+      UrlFetchApp.fetch("https://api.telegram.org/bot" + config.BOT_TOKEN + "/sendPhoto", { "method": "post", "payload": pLoadDin, "muteHttpExceptions": true });
+      return;
+    } catch (eQ) {
+      console.error("Gagal membuat QRIS dinamis, fallback ke gambar statis: " + eQ.toString());
+      // Lanjut ke fallback di bawah bila pembuatan QRIS dinamis gagal.
+    }
+  }
+
+  // ===== FALLBACK: gambar QRIS statis lama (klien input nominal manual) =====
   var panduanBayar = "🛒 *NOTA INVOICE LISENSI PREMIUM* 🛒\n\n" +
                      "▪️ Kode Pesanan: `" + trxId + "`\n" +
                      "▪️ Durasi Paket: *" + durasiBulan + " Bulan*\n" +
                      "▪️ *TOTAL TRANSFER:* `Rp " + nominalTotal.toLocaleString("id-ID") + "`\n\n" +
                      "📌 *PENTING:* Mohon transfer nominal persis hingga *3 digit angka terakhir* ya Pak/Bu. Kelebihan nilai transfer diniatkan sebagai keikhlasan biaya otentikasi sistem. 🙏\n\n" +
                      "Silakan scan QRIS Dana Bisnis di bawah ini, kemudian langsung *kirimkan foto bukti transfer* Anda ke bot ini:";
-  
+
   // Ambil gambar fisik QRIS langsung dari Google Drive Admin
   var blobQris = DriveApp.getFileById(SAAS_CONFIG.QRIS_FILE_ID).getBlob();
   var pLoad = { "chat_id": chatId, "photo": blobQris, "caption": panduanBayar, "parse_mode": "Markdown" };

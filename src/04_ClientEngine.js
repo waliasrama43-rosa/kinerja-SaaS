@@ -24,7 +24,7 @@ function prosesFiturKlienSaaS(update, config, token) {
         return;
       }
       if (klien.Status_Akses !== "AKTIF") {
-        kirimPesanSaaS(chatId, "🔒 Mohon maaf, status akses akun Anda saat ini sedang dinonaktifkan oleh Admin. Silakan hubungi Admin untuk bantuan aktivasi.", null, token);
+        kirimPesanSaaS(chatId, "🔒 Mohon maaf, status akses akun Anda saat ini sedang dinonaktifkan oleh Admin. Silakan hubungi " + linkAdmin() + " untuk bantuan aktivasi.", null, token);
         return;
       }
       if (new Date() > new Date(klien.Masa_Aktif)) {
@@ -118,7 +118,7 @@ function tampilkanMenuRHKKlien(chatId, token) {
   });
   
   if (buttons.length === 0) {
-    kirimPesanSaaS(chatId, "⚠️ *Menu RHK Belum Siap!* Admin sedang merakit konfigurasi template dokumen Anda. Mohon hubungi Admin untuk mempercepat proses. 🙏", null, token);
+    kirimPesanSaaS(chatId, "⚠️ *Menu RHK Belum Siap!* Admin sedang merakit konfigurasi template dokumen Anda. Mohon hubungi " + linkAdmin() + " untuk mempercepat proses. 🙏", null, token);
   } else {
     kirimPesanSaaS(chatId, "📋 *Silakan pilih salah satu RHK Kerja yang ingin Anda laporkan hari ini, Pak/Bu:*", {"inline_keyboard": buttons}, token);
   }

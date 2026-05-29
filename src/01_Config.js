@@ -12,6 +12,13 @@ const SAAS_CONFIG = {
   
   QRIS_FOLDER_ID: "1l2pRo9QQKA--44hq8cQ8KNvuNy7FI1hd",
   QRIS_FILE_ID: "1mTvS-fGL9wpAEl3wlRdSNtvI1XHSzqja",
+
+  // QRIS DINAMIS: tempel payload teks QRIS statis Anda di sini (diawali "0002...")
+  // ATAU lebih praktis simpan lewat perintah Telegram: /admin set_qris <payload>
+  // (disimpan ke sheet Pengaturan baris "QRIS_STATIC_STRING"). Biarkan kosong utk pakai gambar statis lama.
+  QRIS_STATIC_STRING: "",
+  // API pembuat gambar QR (gratis). Bisa diganti via sheet Pengaturan "QRIS_API_URL".
+  QRIS_API_URL: "https://api.qrserver.com/v1/create-qr-code/",
   
   TEKS_PRIVASI_DRIVE: "🔒 *JAMINAN PRIVASI & KEAMANAN DATA*\n" +
                       "Folder yang Anda bagikan 100% tetap menjadi hak milik penuh Anda pribadi. Sistem hanya menaruh file PDF di dalam folder tersebut saja.\n\n" +
@@ -29,6 +36,24 @@ function ambilKonfigurasiSaaS() {
   var config = {};
   for (var i = 1; i < data.length; i++) { config[data[i][0]] = data[i][1]; }
   return config;
+}
+
+// Simpan/perbarui satu baris konfigurasi di sheet "Pengaturan" (upsert).
+function simpanKonfigurasiSaaS(kunci, nilai) {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Pengaturan");
+  var data = sheet.getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][0]) === String(kunci)) {
+      sheet.getRange(i + 1, 2).setValue(nilai);
+      return;
+    }
+  }
+  sheet.appendRow([kunci, nilai]);
+}
+
+// Hyperlink Markdown "ADMIN" yang jika diklik langsung membuka WhatsApp Admin.
+function linkAdmin() {
+  return "[ADMIN](" + SAAS_CONFIG.ADMIN_WHATSAPP_LINK + ")";
 }
 
 function setupStrukturDatabaseSaaS() {
