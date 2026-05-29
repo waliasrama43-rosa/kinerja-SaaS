@@ -69,12 +69,15 @@ function cetakBerkasLaporanPremiumSaaS(chatId, config) {
     docBody.replaceText("{{HARI}}", klien.Hari_Terpilih);
     docBody.replaceText("{{TANGGAL}}", tglString); // Dipaksa jadi bahasa Indonesia!
     
-    var props = PropertiesService.getUserProperties();
-    var listTagsStr = props.getProperty(chatId + "_list_tags") || "";
+    // PENTING: sumber data harus SAMA dengan tempat kuesioner menyimpan, yaitu
+    // ScriptProperties dengan prefix "sess_". (Sebelumnya keliru memakai
+    // getUserProperties tanpa prefix → jawaban & foto tidak terbaca → PDF kosong.)
+    var props = PropertiesService.getScriptProperties();
+    var listTagsStr = props.getProperty("sess_" + chatId + "_list_tags") || "";
     if (listTagsStr !== "") {
       var tagsArr = listTagsStr.split(",");
       tagsArr.forEach(function(tagKey) {
-        var jawabanUser = props.getProperty(chatId + "_ans_" + tagKey) || "-";
+        var jawabanUser = props.getProperty("sess_" + chatId + "_ans_" + tagKey) || "-";
         docBody.replaceText("{{" + tagKey + "}}", jawabanUser);
       });
     }
@@ -82,7 +85,7 @@ function cetakBerkasLaporanPremiumSaaS(chatId, config) {
     var totalFotoTerkirim = parseInt(klien.Foto_Count);
     
     for (var i = 1; i <= totalFotoTerkirim; i++) {
-      var idFileTelegram = props.getProperty(chatId + "_foto_" + i);
+      var idFileTelegram = props.getProperty("sess_" + chatId + "_foto_" + i);
       if (idFileTelegram) {
         var blobGambar = unduhFisikBlobTelegram(idFileTelegram, config.BOT_TOKEN);
         

@@ -21,9 +21,29 @@
 
 function doPost(e) {
   try {
+    // ── KEAMANAN: validasi secret webhook ──────────────────────────
+    // Apps Script doPost TIDAK menerima header HTTP, jadi secret dikirim
+    // sebagai query param (?s=...) yang dipasang pasangWebhookOtomatis().
+    // Bila WEBHOOK_SECRET diset namun tidak cocok → abaikan (anti-POST palsu).
+    var _sp = PropertiesService.getScriptProperties();
+    var _secret = _sp.getProperty("WEBHOOK_SECRET");
+    if (_secret && (!e || !e.parameter || e.parameter.s !== _secret)) {
+      return HtmlService.createHtmlOutput("OK");
+    }
+
     var config = ambilKonfigurasiSaaS();
     var token  = config.BOT_TOKEN;
     var update = JSON.parse(e.postData.contents);
+
+    // ── IDEMPOTENCY: cegah proses ganda bila Telegram kirim ulang ───
+    if (update.update_id != null) {
+      var _cache = CacheService.getScriptCache();
+      var _kDedup = "upd_" + update.update_id;
+      if (_cache.get(_kDedup)) {
+        return HtmlService.createHtmlOutput("OK"); // update ini sudah diproses
+      }
+      _cache.put(_kDedup, "1", 600); // tandai 10 menit
+    }
 
     // ==============================================================
     // 1. CALLBACK QUERY — semua ringan kecuali SaaS_PROSES_NOW
