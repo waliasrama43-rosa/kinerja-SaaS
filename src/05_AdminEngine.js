@@ -581,6 +581,14 @@ function prosesUnduhTemplateWordKlien(chatId, documentObj, config) {
       {"inline_keyboard": baris}, config.BOT_TOKEN);
   }
 
+  // ── Alert DARURAT: klien baru butuh aktivasi segera ──────────────
+  kirimAlertDarurat(config,
+    "KLIEN BARU BUTUH AKTIVASI",
+    "👤 *" + (klien.Nama_Pendaftar||"—") + "* (`" + chatId + "`)\n" +
+    "📁 Template `" + namaFile + "` sudah masuk.\n" +
+    "Mohon konfigurasi menu RHK lalu *aktifkan akun*.",
+    { tombolAksi: [{"text":"✅ Aktifkan Akun Klien", "callback_data":"ADM_AKTIFKAN_" + chatId}] });
+
   // ── Konfirmasi positif ke klien (file sudah pasti diterima admin) ─
   kirimPesanSaaS(chatId,
     "✅ *File template berhasil diterima!*\n\n" +
@@ -855,6 +863,15 @@ function _forwardBuktiBayarKeAdmin(chatId, fileIdFoto, klien, bulan, totalSistem
       "parse_mode"   : "Markdown",
       "reply_markup" : JSON.stringify(kbAdmin)
     }});
+  // ── Alert DARURAT: bukti bayar butuh approve manual ──────────────
+  kirimAlertDarurat(config,
+    "BUKTI BAYAR BUTUH APPROVE",
+    "👤 *" + (klien.Nama_Pendaftar||"—") + "* (`" + chatId + "`)\n" +
+    "💰 Nominal sistem: *Rp " + totalSistem.toLocaleString("id-ID") + "*\n" +
+    "🔎 Status OCR: `" + label + "`\n" +
+    "Cek mutasi lalu *Setujui/Tolak*.",
+    { tombolAksi: [{"text":"✅ Setujui & Aktifkan", "callback_data":"ADM_APP_" + chatId + "_" + bulan}] });
+
   kirimPesanSaaS(chatId,
     "✅ *Bukti pembayaran diterima!*\n\n" +
     "Admin sedang memverifikasi pembayaran. " +

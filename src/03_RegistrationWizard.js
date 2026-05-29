@@ -1,41 +1,43 @@
 // ====================================================================
 // FILE 03: INTERACTIVE ONBOARDING WIZARD (REVISI V3)
 // ====================================================================
-// Alur pendaftaran:
-//   /start → REG_TUNGGU_NAMA → REG_TUNGGU_JML_RHK → REG_TUNGGU_DRIVE_LINK
+// Alur pendaftaran (DISEDERHANAKAN — 2 langkah inti):
+//   /start → REG_TUNGGU_NAMA → REG_TUNGGU_DRIVE_LINK
 //   → REG_TUNGGU_KONFIRMASI_WORD → PENDING_RHK (menunggu template .docx)
 //   → Admin terima .docx, konfigurasi RHK_Config → Admin aktifkan akun
+//
+// Catatan: langkah "pilih jumlah RHK" dihapus dari sisi klien agar lebih
+// ringkas. Jumlah RHK ditentukan Admin saat konfigurasi (dari template).
+// Handler REG_JML_* lama tetap ada untuk kompatibilitas mundur.
 // ====================================================================
 
 function jalankanWizardPendaftaran(chatId, text, state, token) {
 
-  // ── STEP 1: Nama lengkap ──────────────────────────────────────────
+  // ── STEP 1: Nama lengkap → langsung minta link Drive ──────────────
   if (state === "REG_TUNGGU_NAMA") {
-    var namaBersih = text.trim();
+    var namaBersih = (text || "").trim();
+    if (!namaBersih || namaBersih.length < 2) {
+      kirimPesanEngine(chatId,
+        "⚠️ Mohon ketikkan *Nama Lengkap beserta Gelar* Anda terlebih dahulu. 🙏",
+        null, token);
+      return;
+    }
     perbaruiKolomKlien(chatId, "Nama_Pendaftar", namaBersih);
-    perbaruiKolomKlien(chatId, "State_Sesi",     "REG_TUNGGU_JML_RHK");
+    perbaruiKolomKlien(chatId, "State_Sesi",     "REG_TUNGGU_DRIVE_LINK");
 
     var sapaan = getSapaan(namaBersih);
-    var kbRhk = {"inline_keyboard": [
-      [{"text": "1 RHK", "callback_data": "REG_JML_1"},
-       {"text": "2 RHK", "callback_data": "REG_JML_2"},
-       {"text": "3 RHK", "callback_data": "REG_JML_3"}],
-      [{"text": "4 RHK", "callback_data": "REG_JML_4"},
-       {"text": "5 RHK", "callback_data": "REG_JML_5"},
-       {"text": "6 RHK", "callback_data": "REG_JML_6"}],
-      [{"text": "⌨️ Lebih dari 6 RHK", "callback_data": "REG_JML_MANUAL"}]
-    ]};
-
     kirimPesanEngine(chatId,
       "✨ Selamat datang, *" + namaBersih + "*!\n\n" +
-      "Terima kasih telah bergabung di platform *Kinerja RHK*.\n\n" +
-      "Untuk memulai konfigurasi, berapa jumlah *RHK kerja* yang ingin " +
-      "*" + sapaan + "* kelola di sistem ini?",
-      kbRhk, token);
+      "Pendaftaran ini *singkat* — hanya *2 langkah*:\n" +
+      "1️⃣ Hubungkan folder Google Drive (tempat hasil laporan disimpan)\n" +
+      "2️⃣ Kirim template laporan RHK (.docx)\n\n" +
+      "━━━━━━━━━━━━━━━━━━━━\n" +
+      SAAS_CONFIG.TEKS_PRIVASI_DRIVE,
+      null, token);
     return;
   }
 
-  // ── STEP 2: Jumlah RHK manual ────────────────────────────────────
+  // ── (LEGACY) Jumlah RHK manual — dipertahankan utk kompatibilitas ─
   if (state === "REG_TUNGGU_JML_RHK_MANUAL") {
     var angka = parseInt(text);
     if (isNaN(angka) || angka <= 0) {

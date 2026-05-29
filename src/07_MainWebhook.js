@@ -319,6 +319,12 @@ function _prosesCallbackRingan(cbChatId, cbData, cbKlien, update, config, token)
     return HtmlService.createHtmlOutput("OK");
   }
 
+  // ── Admin: matikan alarm darurat ("Stop Alarm") ─────────────────
+  if (isAdmin && cbData.indexOf("ALERT_ACK_") === 0) {
+    matikanAlertDarurat(cbData.replace("ALERT_ACK_", ""), cbChatId, config);
+    return HtmlService.createHtmlOutput("OK");
+  }
+
   // ── Admin: aktifkan akun dari notif template ─────────────────────
   if (isAdmin && cbData.indexOf("ADM_AKTIFKAN_") === 0) {
     var targetAktifId = cbData.replace("ADM_AKTIFKAN_", "");
