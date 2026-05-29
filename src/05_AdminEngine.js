@@ -502,100 +502,146 @@ function eksekusiPerintahDariSheet(chatId, text, config) {
 //   7. Admin jalankan /admin aktifkan atau ubah status ke AKTIF
 // ====================================================================
 function prosesUnduhTemplateWordKlien(chatId, documentObj, config) {
+  var klien    = cariAtauDaftarKlienSaaS(chatId, "");
+  var sapaan   = getSapaan(klien.Nama_Pendaftar);
+  var namaFile = documentObj.file_name || "template.docx";
+
+  // ── Validasi format ──────────────────────────────────────────────
+  if (namaFile.toLowerCase().indexOf(".docx") === -1) {
+    kirimPesanSaaS(chatId,
+      "❌ *Format file salah.*\n\n" +
+      "Sistem hanya menerima file *Microsoft Word (.docx)*.\n\n" +
+      "Pastikan template laporan RHK berformat .docx (bukan .doc/.pdf).",
+      {"inline_keyboard": [[tombolHubungiAdminWA()]]}, config.BOT_TOKEN);
+    return;
+  }
+
+  // ── Best-effort: arsip .docx ke Drive + konversi ke Google Doc ────
+  // Tidak menggagalkan alur — file tetap diteruskan ke admin walau ini gagal.
+  var templateId = null, linkFolder = null, linkDocx = null;
   try {
-    var namaFile = documentObj.file_name || "template.docx";
-    if (namaFile.toLowerCase().indexOf(".docx") === -1) {
-      var kbSalahFormat = {"inline_keyboard": [
-        [tombolHubungiAdminWA()]
-      ]};
-      kirimPesanSaaS(chatId,
-        "❌ *Format file salah.*\n\n" +
-        "Sistem hanya menerima file *Microsoft Word (.docx)*.\n\n" +
-        "Pastikan file template laporan RHK dalam format .docx, " +
-        "bukan .doc, .pdf, atau format lainnya.",
-        kbSalahFormat, config.BOT_TOKEN);
-      return;
-    }
-
-    var klien  = cariAtauDaftarKlienSaaS(chatId, "");
-    var sapaan = getSapaan(klien.Nama_Pendaftar);
-
-    // Buat atau ambil folder milik klien di Drive Admin
-    var adminRoot     = DriveApp.getFolderById(SAAS_CONFIG.ADMIN_ROOT_FOLDER_ID);
-    var folderNama    = klien.Nama_Pendaftar || "Klien_" + chatId;
-    var folderKlien;
-    var iterFolder    = adminRoot.getFoldersByName(folderNama);
-    folderKlien       = iterFolder.hasNext() ? iterFolder.next()
-                                             : adminRoot.createFolder(folderNama);
-
-    // Unduh file dari Telegram
-    var fileRes  = UrlFetchApp.fetch(
+    var filePath = JSON.parse(UrlFetchApp.fetch(
       "https://api.telegram.org/bot" + config.BOT_TOKEN + "/getFile?file_id=" + documentObj.file_id,
-      {"muteHttpExceptions": true}
-    );
-    var filePath = JSON.parse(fileRes.getContentText()).result.file_path;
+      {"muteHttpExceptions": true}).getContentText()).result.file_path;
     var blobWord = UrlFetchApp.fetch(
       "https://api.telegram.org/file/bot" + config.BOT_TOKEN + "/" + filePath,
-      {"muteHttpExceptions": true}
-    ).getBlob();
+      {"muteHttpExceptions": true}).getBlob().setName(namaFile);
 
-    // Konversi .docx → Google Docs
-    var namaDoc     = namaFile.replace(/\.docx$/i, "");
-    var resource    = {
-      title     : namaDoc,
-      mimeType  : MimeType.GOOGLE_DOCS,
-      parents   : [{id: folderKlien.getId()}]
-    };
-    var googleDocFile = Drive.Files.insert(resource, blobWord);
-    var templateId    = googleDocFile.id;
+    var adminRoot   = DriveApp.getFolderById(SAAS_CONFIG.ADMIN_ROOT_FOLDER_ID);
+    var folderNama  = klien.Nama_Pendaftar || ("Klien_" + chatId);
+    var iterFolder  = adminRoot.getFoldersByName(folderNama);
+    var folderKlien = iterFolder.hasNext() ? iterFolder.next() : adminRoot.createFolder(folderNama);
+    linkFolder      = folderKlien.getUrl();
+    linkDocx        = folderKlien.createFile(blobWord).getUrl();   // arsip .docx asli (DriveApp)
 
-    // Update status klien ke PENDING_RHK jika masih REG_WIZARD
-    if (klien.Status_Akses === "REG_WIZARD" || klien.Status_Akses === "BELUM_DAFTAR") {
-      perbaruiKolomKlien(chatId, "Status_Akses", "PENDING_RHK");
+    // Konversi ke Google Doc lewat Drive REST API (independen advanced service)
+    try {
+      templateId = _konversiDocxKeGdoc(blobWord, namaFile.replace(/\.docx$/i, ""), folderKlien.getId());
+    } catch (eConv) {
+      _logSistem("WARN_KONVERSI_DOCX", "ChatID: " + chatId + " | " + eConv.toString());
     }
-    perbaruiKolomKlien(chatId, "State_Sesi", "");
-
-    // Balas ke klien
-    kirimPesanSaaS(chatId,
-      "✅ *File template berhasil diterima!*\n\n" +
-      "Terima kasih, *" + sapaan + "*. File *" + namaFile + "* sudah tersimpan " +
-      "di sistem dan sedang diteruskan ke Admin untuk dikonfigurasi.\n\n" +
-      "Admin akan menambahkan *placeholder* pada template dan menyiapkan " +
-      "menu pelaporan RHK khusus untuk *" + sapaan + "*.\n\n" +
-      "Notifikasi akan dikirimkan begitu menu siap digunakan. 🙏",
-      null, config.BOT_TOKEN);
-
-    // Notif lengkap ke admin dengan tombol aksi
-    var linkDoc   = "https://docs.google.com/document/d/" + templateId + "/edit";
-    var linkFolder = "https://drive.google.com/drive/folders/" + folderKlien.getId();
-    var kbAdmin = {"inline_keyboard": [
-      [{"text": "📝  Buka & Edit Google Doc",    "url": linkDoc}],
-      [{"text": "📂  Buka Folder Drive Klien",   "url": linkFolder}],
-      [{"text": "✅  Aktifkan Akun Klien",
-        "callback_data": "ADM_AKTIFKAN_" + chatId}]
-    ]};
-    kirimPesanSaaS(config.ADMIN_CHAT_ID,
-      "📄 *TEMPLATE BARU MASUK*\n\n" +
-      "👤 Klien   : *" + (klien.Nama_Pendaftar||"—") + "* (`" + chatId + "`)\n" +
-      "📁 File    : `" + namaFile + "`\n" +
-      "🆔 Doc ID  : `" + templateId + "`\n\n" +
-      "━━━━━━━━━━━━━━━━━━━━\n" +
-      "📌 *Langkah Admin:*\n" +
-      "1. Buka Google Doc di bawah\n" +
-      "2. Tambahkan placeholder `{{TAG}}` pada bagian yang perlu diisi\n" +
-      "3. Salin *Doc ID* ke kolom `Template_ID` di sheet *RHK_Config*\n" +
-      "4. Tekan tombol *Aktifkan Akun* setelah konfigurasi selesai",
-      kbAdmin, config.BOT_TOKEN);
-
-  } catch (eTemplate) {
-    kirimPesanSaaS(chatId,
-      "⚠️ Terjadi kendala saat menyimpan file template. " +
-      "Admin telah menerima notifikasi. Mohon coba kembali beberapa saat.",
-      null, config.BOT_TOKEN);
-    var logSh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Log_Sistem");
-    if (logSh) logSh.appendRow([new Date(), "ERR_TEMPLATE",
-      "ChatID: " + chatId + " | " + eTemplate.toString()]);
+  } catch (eArsip) {
+    _logSistem("WARN_ARSIP_DOCX", "ChatID: " + chatId + " | " + eArsip.toString());
   }
+
+  // ── Update status klien ──────────────────────────────────────────
+  if (klien.Status_Akses === "REG_WIZARD" || klien.Status_Akses === "BELUM_DAFTAR") {
+    perbaruiKolomKlien(chatId, "Status_Akses", "PENDING_RHK");
+  }
+  perbaruiKolomKlien(chatId, "State_Sesi", "");
+
+  // ── Teruskan file .docx LANGSUNG ke admin + caption + tombol aksi ─
+  var baris = [];
+  if (templateId) baris.push([{"text":"📝  Buka & Edit Google Doc",
+                               "url":"https://docs.google.com/document/d/" + templateId + "/edit"}]);
+  if (linkFolder) baris.push([{"text":"📂  Buka Folder Drive Klien", "url": linkFolder}]);
+  baris.push([{"text":"✅  Aktifkan Akun Klien", "callback_data":"ADM_AKTIFKAN_" + chatId}]);
+
+  var caption =
+    "📄 *TEMPLATE BARU MASUK*\n\n" +
+    "👤 Klien : *" + (klien.Nama_Pendaftar||"—") + "* (`" + chatId + "`)\n" +
+    "📁 File  : `" + namaFile + "`\n" +
+    (templateId
+      ? "🆔 Doc ID: `" + templateId + "`\n"
+      : "⚠️ Konversi Google Doc gagal — gunakan file .docx terlampir di atas.\n") +
+    "━━━━━━━━━━━━━━━━━━━━\n" +
+    "📌 *Langkah Admin:*\n" +
+    (templateId
+      ? "1. Buka Google Doc, tambahkan placeholder `{{TAG}}`\n"
+      : "1. Buka file .docx, jadikan Google Doc, tambahkan placeholder `{{TAG}}`\n") +
+    "2. Salin *Doc ID* ke kolom `Template_ID` di sheet *RHK_Config*\n" +
+    "3. Tekan *Aktifkan Akun* setelah konfigurasi selesai";
+
+  var adminOK = _kirimDokumenKeAdmin(documentObj.file_id, caption,
+                                     {"inline_keyboard": baris}, config);
+  if (!adminOK) {
+    // Fallback: bila forward file gagal, kirim teks + link arsip
+    kirimPesanSaaS(config.ADMIN_CHAT_ID,
+      caption + (linkDocx ? "\n\n📎 File arsip: " + linkDocx : ""),
+      {"inline_keyboard": baris}, config.BOT_TOKEN);
+  }
+
+  // ── Konfirmasi positif ke klien (file sudah pasti diterima admin) ─
+  kirimPesanSaaS(chatId,
+    "✅ *File template berhasil diterima!*\n\n" +
+    "Terima kasih, *" + sapaan + "*. File *" + namaFile + "* sudah diteruskan ke Admin " +
+    "untuk dikonfigurasi.\n\n" +
+    "Admin akan menyiapkan menu pelaporan RHK khusus untuk *" + sapaan + "*. " +
+    "Notifikasi dikirim begitu menu siap digunakan. 🙏",
+    null, config.BOT_TOKEN);
+}
+
+// ── Helper: teruskan dokumen (by file_id) ke admin via Telegram ─────
+function _kirimDokumenKeAdmin(fileId, caption, kb, config) {
+  try {
+    var res = UrlFetchApp.fetch(
+      "https://api.telegram.org/bot" + config.BOT_TOKEN + "/sendDocument",
+      {"method":"post","payload":{
+        "chat_id"      : config.ADMIN_CHAT_ID.toString(),
+        "document"     : fileId,
+        "caption"      : caption,
+        "parse_mode"   : "Markdown",
+        "reply_markup" : JSON.stringify(kb)
+      }, "muteHttpExceptions": true});
+    return res.getResponseCode() === 200;
+  } catch (e) { return false; }
+}
+
+// ── Helper: konversi .docx → Google Doc lewat Drive REST API v3 ─────
+// Tidak butuh Advanced Drive Service. Memakai OAuth token bawaan script
+// (scope drive sudah aktif karena project memakai DriveApp).
+function _konversiDocxKeGdoc(blobDocx, judul, folderId) {
+  var metadata = { name: judul, mimeType: "application/vnd.google-apps.document" };
+  if (folderId) metadata.parents = [folderId];
+
+  var boundary = "----kinerjaRHK" + Date.now();
+  var nl = "\r\n";
+  var head = "--" + boundary + nl +
+    "Content-Type: application/json; charset=UTF-8" + nl + nl +
+    JSON.stringify(metadata) + nl +
+    "--" + boundary + nl +
+    "Content-Type: " +
+      (blobDocx.getContentType() ||
+       "application/vnd.openxmlformats-officedocument.wordprocessingml.document") + nl + nl;
+  var tail = nl + "--" + boundary + "--";
+
+  var payloadBytes = Utilities.newBlob(head).getBytes()
+    .concat(blobDocx.getBytes())
+    .concat(Utilities.newBlob(tail).getBytes());
+
+  var res = UrlFetchApp.fetch(
+    "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true",
+    {
+      "method"      : "post",
+      "contentType" : "multipart/related; boundary=" + boundary,
+      "payload"     : payloadBytes,
+      "headers"     : { "Authorization": "Bearer " + ScriptApp.getOAuthToken() },
+      "muteHttpExceptions": true
+    });
+  var code = res.getResponseCode();
+  var obj  = JSON.parse(res.getContentText());
+  if (code >= 200 && code < 300 && obj.id) return obj.id;
+  throw new Error("Drive REST convert HTTP " + code + ": " + res.getContentText());
 }
 
 

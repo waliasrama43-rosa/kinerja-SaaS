@@ -82,9 +82,18 @@ function cekKesehatanSistem() {
   var urlExec = "";
   try { urlExec = ScriptApp.getService().getUrl(); } catch (e) {}
   if (urlExec) {
-    L.push("✅ URL Web App (deploy aktif): " + urlExec);
+    var tipeUrl = urlExec.indexOf("/exec") !== -1 ? "/exec" : "/dev (HEAD — hanya utk tes manual)";
+    L.push("✅ URL Web App runtime: " + urlExec + "  [" + tipeUrl + "]");
   } else {
     L.push("⚠️ Web App belum ter-deploy. Lakukan Deploy -> New deployment -> Web app.");
+  }
+  // URL /exec resmi untuk webhook (diambil dari sheet Pengaturan > WEBHOOK_URL)
+  var urlWebhookResmi = _resolveUrlExec(config);
+  if (urlWebhookResmi) {
+    L.push("✅ URL webhook (sumber WEBHOOK_URL): " + urlWebhookResmi);
+  } else {
+    L.push("⚠️ WEBHOOK_URL '/exec' belum diisi di sheet Pengaturan. " +
+           "Tempel URL Web App '/exec' ke sana lalu jalankan pasangWebhookOtomatis().");
   }
 
   try {
@@ -102,8 +111,12 @@ function cekKesehatanSistem() {
       } else {
         L.push("   ✅ Tidak ada error pengiriman terakhir dari Telegram.");
       }
-      if (urlExec && r.url && r.url.indexOf(urlExec.replace(/\/exec.*$/, "")) === -1) {
-        L.push("   ⚠️ URL webhook BERBEDA dengan URL deploy aktif. Jalankan pasangWebhookOtomatis().");
+      if (r.url && r.url.indexOf("/dev") !== -1) {
+        L.push("   ❌ Webhook memakai URL '/dev' — Telegram TIDAK bisa mengaksesnya. " +
+               "Pakai URL '/exec' lalu jalankan pasangWebhookOtomatis().");
+      } else if (urlWebhookResmi && r.url && r.url !== urlWebhookResmi) {
+        L.push("   ⚠️ URL webhook terpasang BERBEDA dengan WEBHOOK_URL di sheet. " +
+               "Jalankan pasangWebhookOtomatis() agar sinkron.");
       }
     }
   } catch (e) {
@@ -123,16 +136,56 @@ function cekKesehatanSistem() {
  */
 function pasangWebhookOtomatis() {
   var config = ambilKonfigurasiSaaS();
-  var url = ScriptApp.getService().getUrl();
+  var url    = _resolveUrlExec(config);
+
   if (!url) {
-    console.log("❌ Web App belum ter-deploy. Deploy dulu sebagai Web app, lalu ulangi.");
+    console.log(
+      "❌ URL '/exec' belum tersedia.\n\n" +
+      "LANGKAH:\n" +
+      "1. Deploy ▸ Manage deployments ▸ buka deployment Web App aktif\n" +
+      "2. Salin URL yang DIAKHIRI '/exec'  (BUKAN '/dev')\n" +
+      "3. Tempel ke sheet 'Pengaturan' baris kunci 'WEBHOOK_URL'\n" +
+      "4. Jalankan ulang pasangWebhookOtomatis()");
     return;
   }
+  if (url.indexOf("/exec") === -1) {
+    console.log(
+      "⚠️ URL terdeteksi BUKAN '/exec':\n   " + url + "\n\n" +
+      "Telegram tidak bisa memakai URL '/dev' (butuh login). " +
+      "Tempel URL '/exec' Web App ke sheet 'Pengaturan' > 'WEBHOOK_URL', lalu ulangi.");
+    return;
+  }
+
   var res = JSON.parse(UrlFetchApp.fetch(
     "https://api.telegram.org/bot" + config.BOT_TOKEN + "/setWebhook?url=" + encodeURIComponent(url) +
     "&drop_pending_updates=true",
     { muteHttpExceptions: true }).getContentText());
-  console.log("Hasil setWebhook ke " + url + "\n" + JSON.stringify(res, null, 2));
+  console.log("Hasil setWebhook ke:\n  " + url + "\n\n" + JSON.stringify(res, null, 2));
+  if (res.ok) console.log("\n✅ Webhook terpasang. Kirim /start ke bot untuk menguji.");
+}
+
+/**
+ * Tentukan URL '/exec' untuk webhook.
+ * Prioritas:
+ *   1. Sheet 'Pengaturan' kunci 'WEBHOOK_URL' (cara paling andal — tempel URL /exec sekali)
+ *   2. Runtime ScriptApp.getService().getUrl() HANYA bila sudah berupa /exec
+ * Catatan: dari editor, getUrl() mengembalikan '/dev' (tak bisa dipakai webhook),
+ *          karena itu sumber utama adalah WEBHOOK_URL di sheet.
+ */
+function _resolveUrlExec(config) {
+  if (config && config.WEBHOOK_URL) {
+    var u = config.WEBHOOK_URL.toString().trim();
+    if (u.indexOf("https://") === 0 &&
+        u.indexOf("/exec") !== -1 &&
+        u.indexOf("ISI_DEPLOYMENT_ID") === -1) {
+      return u;
+    }
+  }
+  try {
+    var svc = ScriptApp.getService().getUrl();
+    if (svc && svc.indexOf("/exec") !== -1) return svc;
+  } catch (e) {}
+  return "";
 }
 
 /** Lihat status webhook saat ini beserta pesan error terakhir dari Telegram. */
