@@ -6,13 +6,13 @@
 // nominal manual saat membayar.
 //
 // Cara kerja:
-//  1. Ubah tag 01 "Point of Initiation Method" dari 11 (statis) -> 12 (dinamis)
+//  1. Ubah tag 01 "Point of Initiation Method" dari 11 (statis) ke 12 (dinamis)
 //  2. Sisipkan tag 54 (Transaction Amount) berisi nominal
 //  3. Hitung ulang CRC16 (tag 63)
 //  4. Render menjadi gambar QR via API.
 // ====================================================================
 
-/** CRC16-CCITT (False) — polinomial 0x1021, nilai awal 0xFFFF. */
+// CRC16-CCITT (False): polinomial 0x1021, nilai awal 0xFFFF.
 function hitungCRC16Qris(str) {
   var crc = 0xFFFF;
   for (var i = 0; i < str.length; i++) {
@@ -29,7 +29,7 @@ function hitungCRC16Qris(str) {
 
 function _pad2Qris(n) { return (n < 10 ? "0" : "") + n; }
 
-/** Pecah string EMVCo menjadi daftar TLV level-atas: [{tag, val}, ...] */
+// Pecah string EMVCo menjadi daftar TLV level-atas: [{tag, val}, ...]
 function _parseTlvQris(s) {
   var out = [], i = 0;
   while (i + 4 <= s.length) {
@@ -43,10 +43,7 @@ function _parseTlvQris(s) {
   return out;
 }
 
-/**
- * Bangun payload QRIS dinamis dari QRIS statis + nominal (rupiah, integer).
- * @return {string} payload QRIS dinamis lengkap dengan CRC.
- */
+// Bangun payload QRIS dinamis dari QRIS statis + nominal (rupiah, integer).
 function buatQrisDinamis(qrisStatis, nominal) {
   var s = String(qrisStatis).trim();
 
@@ -62,7 +59,7 @@ function buatQrisDinamis(qrisStatis, nominal) {
   var out = "", sudahSisip = false;
   for (var i = 0; i < tlv.length; i++) {
     var t = tlv[i];
-    if (t.tag === "01") { out += "010212"; continue; }   // statis -> dinamis
+    if (t.tag === "01") { out += "010212"; continue; }   // statis ke dinamis
     if (t.tag === "54") { continue; }                    // buang nominal lama (akan diganti)
     if (t.tag === "58" && !sudahSisip) {                 // sisipkan nominal sebelum kode negara
       out += tag54; sudahSisip = true;
@@ -75,19 +72,19 @@ function buatQrisDinamis(qrisStatis, nominal) {
   return out + hitungCRC16Qris(out);
 }
 
-/** Render payload QRIS menjadi blob gambar PNG via API QR. */
+// Render payload QRIS menjadi blob gambar PNG via API QR.
 function generateBlobQris(payload, apiUrl) {
   var base = apiUrl || "https://api.qrserver.com/v1/create-qr-code/";
   var url = base + "?size=512x512&margin=15&data=" + encodeURIComponent(payload);
   return UrlFetchApp.fetch(url, { muteHttpExceptions: true }).getBlob().setName("QRIS_Dinamis.png");
 }
 
-/** Uji cepat dari editor: cek payload dinamis terbentuk benar. */
+// Uji cepat dari editor: cek payload dinamis terbentuk benar.
 function tesQrisDinamis() {
   var cfg = ambilKonfigurasiSaaS();
   var statis = cfg.QRIS_STATIC_STRING || SAAS_CONFIG.QRIS_STATIC_STRING || "";
   if (!statis) {
-    console.log("❌ QRIS_STATIC_STRING belum diisi. Jalankan: /admin set_qris <payload> di Telegram.");
+    console.log("QRIS_STATIC_STRING belum diisi. Jalankan: /admin set_qris <payload> di Telegram.");
     return;
   }
   var dyn = buatQrisDinamis(statis, 10123);
