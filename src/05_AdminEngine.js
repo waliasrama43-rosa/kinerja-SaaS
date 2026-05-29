@@ -354,7 +354,138 @@ function eksekusiPerintahDariSheet(chatId, text, config) {
       null, config.BOT_TOKEN);
     return true;
   }
-  return false;
+
+  // ── FITUR BARU: /admin bantuan ───────────────────────────────────
+  // Menampilkan semua perintah: hardcoded + perintah dari sheet Admin_Commands
+  if (text === "/admin bantuan") {
+    var bantuanTeks = "📖 *PANDUAN LENGKAP PERINTAH ADMIN* 📖\n\n" +
+      "━━━ *PERINTAH INTI (BAWAAN SISTEM)* ━━━\n" +
+      "▪️ `/admin` atau `/admin cek_sistem` — Dashboard statistik\n" +
+      "▪️ `/admin daftar_chatid` — Daftar semua Chat ID klien\n" +
+      "▪️ `/admin cek_pendaftaran` — Klien dengan registrasi macet\n" +
+      "▪️ `/admin bantuan` — Tampilkan panduan ini\n" +
+      "▪️ `/admin broadcast [pesan]` — Kirim pesan ke semua klien aktif\n" +
+      "▪️ `/admin blokir [ID] [alasan]` — Blokir akun klien\n" +
+      "▪️ `/admin aktifkan [ID]` — Aktifkan akun klien\n\n" +
+      "▪️ `/admin aktifkan [ID] [bulan]` — Aktifkan akun klien\n" +
+      "▪️ `/admin kirim_template [ID]` — Kirim ulang file template ke klien\n" +
+      "▪️ `/admin follow_up [ID]` — Info lengkap + deeplink WA klien\n" +
+      "▪️ `/admin follow_up_semua` — Daftar klien expired/hampir expired\n\n" +
+      "━━━ *PERINTAH DARI SHEET Admin_Commands* ━━━\n";
+
+    var acSheet2 = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Admin_Commands");
+    if (acSheet2) {
+      var acData2 = acSheet2.getDataRange().getValues();
+      var adaPerintahSheet = false;
+      for (var ac2 = 1; ac2 < acData2.length; ac2++) {
+        var aktifFlag = acData2[ac2][4] ? acData2[ac2][4].toString().toUpperCase() : "FALSE";
+        var labelAktif = (aktifFlag === "TRUE") ? "✅" : "❌";
+        bantuanTeks += labelAktif + " `" + acData2[ac2][0] + "`\n   _" + (acData2[ac2][5] || "Tanpa deskripsi") + "_\n";
+        adaPerintahSheet = true;
+      }
+      if (!adaPerintahSheet) bantuanTeks += "_Belum ada perintah di sheet Admin_Commands._\n";
+    } else {
+      bantuanTeks += "_Sheet Admin_Commands belum dibuat. Jalankan `setupStrukturDatabaseSaaS()` terlebih dahulu._\n";
+    }
+
+    bantuanTeks += "\n💡 *Tip:* Tambah perintah baru kapan saja langsung di sheet *Admin_Commands* tanpa mengubah kode!";
+    kirimPesanSaaS(chatId, bantuanTeks, null, config.BOT_TOKEN);
+    return true;
+  }
+
+  // ----------------------------------------------------------------
+  // ENGINE PERINTAH DINAMIS — Baca dari sheet Admin_Commands
+  // Eksekusi otomatis tanpa ubah kode, cukup tambah baris di sheet
+  // ----------------------------------------------------------------
+  var hasilSheet = eksekusiPerintahDariSheet(chatId, text, config);
+  if (hasilSheet) return true;
+
+  // Tidak ada perintah yang cocok → tampilkan petunjuk
+  kirimPesanSaaS(chatId, "❓ Perintah tidak dikenali.\n\nKetik `/admin bantuan` untuk melihat daftar lengkap perintah yang tersedia.", null, config.BOT_TOKEN);
+  return true;
+}
+
+// ====================================================================
+// ENGINE PERINTAH DINAMIS DARI SHEET Admin_Commands
+// ====================================================================
+// Cara kerja:
+//   1. Baca semua baris sheet Admin_Commands
+//   2. Cocokkan kolom Perintah dengan teks yang dikirim admin
+//   3. Jika cocok & Aktif = TRUE, jalankan sesuai Tipe:
+//      - BALAS_TEKS   : kirim Isi_Pesan ke admin
+//      - BROADCAST    : kirim Isi_Pesan ke semua klien AKTIF
+//      - KIRIM_KE_USER: kirim Isi_Pesan ke Chat ID yang disebut setelah perintah
+// ====================================================================
+function eksekusiPerintahDariSheet(chatId, text, config) {
+  var acSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Admin_Commands");
+  if (!acSheet) return false;
+
+  var acData = acSheet.getDataRange().getValues();
+
+  for (var i = 1; i < acData.length; i++) {
+    var perintahSheet = acData[i][0] ? acData[i][0].toString().trim() : "";
+    var tipe          = acData[i][1] ? acData[i][1].toString().trim().toUpperCase() : "";
+    var parameter     = acData[i][2] ? acData[i][2].toString().trim() : "";
+    var isiPesan      = acData[i][3] ? acData[i][3].toString() : "";
+    var aktifFlag     = acData[i][4] ? acData[i][4].toString().toUpperCase() : "FALSE";
+    
+    if (perintahSheet === "") continue;
+
+    // Cocokkan: perintah sheet harus merupakan awalan dari teks yang dikirim
+    var cocok = (text === perintahSheet) || (text.indexOf(perintahSheet + " ") === 0);
+    if (!cocok) continue;
+
+    // Lewati perintah yang dinonaktifkan (Aktif = FALSE)
+    if (aktifFlag !== "TRUE") {
+      kirimPesanSaaS(chatId, "⚠️ Perintah `" + perintahSheet + "` saat ini sedang *dinonaktifkan* oleh pengaturan sheet.", null, config.BOT_TOKEN);
+      return true;
+    }
+
+    // ── Tipe: BALAS_TEKS ──────────────────────────────────────────
+    if (tipe === "BALAS_TEKS") {
+      kirimPesanSaaS(chatId, isiPesan, null, config.BOT_TOKEN);
+      return true;
+    }
+
+    // ── Tipe: BROADCAST ───────────────────────────────────────────
+    if (tipe === "BROADCAST") {
+      var clientSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Client_SaaS");
+      var clientData  = clientSheet.getDataRange().getValues();
+      var hitBroadcast = 0;
+      for (var bc = 1; bc < clientData.length; bc++) {
+        if (clientData[bc][3] === "AKTIF") {
+          kirimPesanSaaS(clientData[bc][0].toString(), "📢 *PENGUMUMAN RESMI PLATFORM RHK:*\n\n" + isiPesan, null, config.BOT_TOKEN);
+          hitBroadcast++;
+        }
+      }
+      kirimPesanSaaS(chatId, "🚀 Perintah sheet `" + perintahSheet + "` berhasil broadcast ke *" + hitBroadcast + "* klien aktif!", null, config.BOT_TOKEN);
+      return true;
+    }
+
+    // ── Tipe: KIRIM_KE_USER ───────────────────────────────────────
+    // Penggunaan: /admin teguran [CHAT_ID_TARGET]
+    if (tipe === "KIRIM_KE_USER") {
+      var bagianTeks = text.replace(perintahSheet, "").trim();
+      var targetUserId = bagianTeks !== "" ? bagianTeks.split(" ")[0] : "";
+
+      if (!targetUserId) {
+        kirimPesanSaaS(chatId, "💡 Sertakan Chat ID target setelah perintah.\nContoh: `" + perintahSheet + " 927597163`", null, config.BOT_TOKEN);
+        return true;
+      }
+
+      // Ganti placeholder {chatId} jika ada di isi pesan
+      var pesanFinal = isiPesan.replace(/\{chatId\}/g, targetUserId);
+      kirimPesanSaaS(targetUserId, pesanFinal, null, config.BOT_TOKEN);
+      kirimPesanSaaS(chatId, "✅ Pesan dari perintah sheet `" + perintahSheet + "` berhasil dikirim ke `" + targetUserId + "`.", null, config.BOT_TOKEN);
+      return true;
+    }
+
+    // Tipe tidak dikenal
+    kirimPesanSaaS(chatId, "⚠️ Tipe perintah `" + tipe + "` pada baris sheet tidak dikenali. Gunakan: BALAS_TEKS | BROADCAST | KIRIM_KE_USER", null, config.BOT_TOKEN);
+    return true;
+  }
+
+  return false; // Tidak ada perintah yang cocok di sheet
 }
 
 
@@ -527,6 +658,18 @@ function buatInvoiceOtonomSaaS(chatId, durasiBulan, config) {
   }
 }
 
+// ====================================================================
+// TERIMA BUKTI BAYAR + OCR AUTO-APPROVE
+// ====================================================================
+// Alur:
+//   1. Unduh foto ke Drive sementara
+//   2. Baca teks via Google Drive OCR (gratis, tanpa API key tambahan)
+//   3. Cari angka nominal di teks hasil OCR
+//   4. Cocokkan dengan nominal sistem (toleransi ±5 untuk kompresi gambar)
+//   5. Jika cocok pasti → AUTO APPROVE
+//   6. Jika ada teks tapi nominal tidak cocok → forward ke admin + label RAGU
+//   7. Jika OCR gagal/kosong → forward ke admin manual seperti sebelumnya
+// ====================================================================
 function terimaFotoBuktiTransferKlien(chatId, photoArray, config) {
   var props       = PropertiesService.getScriptProperties();
   var trxId       = props.getProperty("pending_trx_"   + chatId) || "TRX_UNKNOWN";

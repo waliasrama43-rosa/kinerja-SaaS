@@ -402,6 +402,49 @@ function pasangSemuaTrigger() {
     if (daftarFungsi.indexOf(existing[x].getHandlerFunction()) !== -1) {
       ScriptApp.deleteTrigger(existing[x]);
     }
+
+    // Kirim pesan via Telegram bot
+    try {
+      kirimPesanSaaS(chatId, teksWarning, kbWarning, token);
+
+      // Simpan flag agar tidak dikirim ulang
+      var flagBaru = warningSent ? warningSent + "," + flagKey : flagKey;
+      sheet.getRange(i + 1, colWarning + 1).setValue(flagBaru);
+      terkirim++;
+
+      // ── Notif ke admin juga ──────────────────────────────────────
+      var noWAAdmin = noWA || "Tidak tersedia";
+      var pesanWALink = buatLinkWA(noWA,
+        "Halo Pak/Bu " + nama + ", masa aktif bot RHK Anda " +
+        (sisaHari === 0 ? "berakhir HARI INI" : "tersisa " + sisaHari + " hari") +
+        ". Ketik /bayar di bot untuk perpanjangan. Terima kasih 🙏");
+
+      var kbAdminNotif = {"inline_keyboard": []};
+      if (pesanWALink) {
+        kbAdminNotif.inline_keyboard.push([{
+          "text": "💬 WA " + nama, "url": pesanWALink
+        }]);
+      }
+      kbAdminNotif.inline_keyboard.push([{
+        "text": "📊 Follow Up Detail", "callback_data": "ADM_FU_" + chatId
+      }]);
+
+      kirimPesanSaaS(config.ADMIN_CHAT_ID,
+        "🔔 *Notif Warning H-" + sisaHari + " Terkirim*\n\n" +
+        "👤 *" + nama + "* (`" + chatId + "`)\n" +
+        "📱 No. WA: `" + noWAAdmin + "`\n" +
+        "📅 Expired: *" + Utilities.formatDate(expiry, "GMT+7", "dd/MM/yyyy") + "*",
+        kbAdminNotif, token);
+
+    } catch(eWarn) {
+      var logSheet = ss.getSheetByName("Log_Sistem");
+      if (logSheet) {
+        logSheet.appendRow([new Date(), "WARN_ERROR",
+          "Gagal kirim warning H-" + sisaHari + " ke " + chatId + ": " + eWarn.toString()]);
+      }
+    }
+
+    Utilities.sleep(300); // jeda antar pengiriman
   }
 
   // ── 1. Queue Worker: tiap 1 menit ─────────────────────────────
