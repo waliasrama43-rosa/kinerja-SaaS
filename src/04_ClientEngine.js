@@ -302,6 +302,59 @@ function analisisDanMulaiPertanyaanDoc(chatId, token) {
   }
 }
 
+// ====================================================================
+// BANTUAN PLACEHOLDER OTOMATIS (memudahkan admin)
+// ====================================================================
+// Ubah "NAMA_KEGIATAN" → "Nama Kegiatan"
+function _tagKeLabel(tag) {
+  return tag.toLowerCase().replace(/_/g, " ")
+            .replace(/\b\w/g, function(c) { return c.toUpperCase(); });
+}
+
+// Pindai semua placeholder {{TAG}} pada sebuah Google Doc template
+// (mengabaikan tag sistem HARI/TANGGAL/FOTO1..4). Return: array nama tag.
+function pindaiTagTemplate(templateId) {
+  var SKIP = ["HARI", "TANGGAL", "FOTO1", "FOTO2", "FOTO3", "FOTO4"];
+  var hasil = [];
+  try {
+    var teks = DocumentApp.openById(templateId).getBody().getText();
+    var re = /\{\{([A-Za-z0-9_]+)\}\}/g, m;
+    while ((m = re.exec(teks)) !== null) {
+      var t = m[1];
+      if (SKIP.indexOf(t) === -1 && hasil.indexOf(t) === -1) hasil.push(t);
+    }
+  } catch (e) { /* templateId tak valid / masih .docx */ }
+  return hasil;
+}
+
+// Tambahkan tag yang BELUM ada ke Kamus_Placeholder dengan pertanyaan default.
+// Idempotent + LockService. Return: array tag yang baru ditambahkan.
+function sinkronkanKamusDariTag(tags) {
+  var baru = [];
+  if (!tags || !tags.length) return baru;
+  var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Kamus_Placeholder");
+  if (!sh) return baru;
+  var lock = LockService.getScriptLock();
+  try { lock.waitLock(10000); } catch (eL) {}
+  try {
+    var data = sh.getDataRange().getValues();
+    var ada  = {};
+    for (var i = 1; i < data.length; i++) {
+      if (data[i][0]) ada[data[i][0].toString().toUpperCase()] = true;
+    }
+    for (var k = 0; k < tags.length; k++) {
+      var tag = tags[k];
+      if (ada[tag.toUpperCase()]) continue;
+      sh.appendRow([tag, "Silakan isi " + _tagKeLabel(tag) + " untuk laporan ini:"]);
+      ada[tag.toUpperCase()] = true;
+      baru.push(tag);
+    }
+  } finally {
+    try { lock.releaseLock(); } catch (eR) {}
+  }
+  return baru;
+}
+
 function pindahKePertanyaanBerikutnya(chatId, token) {
   var props       = PropertiesService.getScriptProperties();
   var listTagsStr = props.getProperty("sess_" + chatId + "_list_tags") || "";
@@ -331,20 +384,24 @@ function pindahKePertanyaanBerikutnya(chatId, token) {
     }
 
     // Fallback otomatis jika tag tidak ada di kamus:
-    // Ubah nama tag menjadi kalimat tanya yang terbaca manusia.
-    // Contoh: "NAMA_KEGIATAN" → "Nama Kegiatan"
-    //         "KELAS"        → "Kelas"
-    //         "NIP"          → "NIP"
-    var labelTampil = tagSekarang;    // default: nama tag asli
-    var isAutoQuestion = false;
+    // Bot TETAP bertanya (pakai kalimat otomatis dari nama tag), DAN
+    // tag langsung ditambahkan ke Kamus_Placeholder (swa-pulih) sehingga
+    // admin tak perlu khawatir lupa mendaftarkannya. Admin diberi tahu
+    // SEKALI saat tag benar-benar baru.
     if (kalimatTanya === null) {
-      isAutoQuestion = true;
-      // Ubah underscore jadi spasi, title case
-      labelTampil = tagSekarang
-        .toLowerCase()
-        .replace(/_/g, " ")
-        .replace(/\b\w/g, function(c) { return c.toUpperCase(); });
-      kalimatTanya = "Silakan isi *" + labelTampil + "* untuk laporan ini:";
+      kalimatTanya = "Silakan isi *" + _tagKeLabel(tagSekarang) + "* untuk laporan ini:";
+      try {
+        var ditambah = sinkronkanKamusDariTag([tagSekarang]);
+        if (ditambah.length) {
+          var cfgNotif = ambilKonfigurasiSaaS();
+          kirimPesanSaaS(cfgNotif.ADMIN_CHAT_ID,
+            "🧩 *Placeholder Baru Terdeteksi*\n\n" +
+            "Tag `{{" + tagSekarang + "}}` belum ada di Kamus_Placeholder — " +
+            "sudah *ditambahkan otomatis* dengan pertanyaan default.\n" +
+            "Perbaiki kalimatnya di sheet *Kamus_Placeholder* bila perlu.",
+            null, cfgNotif.BOT_TOKEN);
+        }
+      } catch (eSync) { /* abaikan; kuesioner tetap lanjut */ }
     }
 
     var kbOpsi = {"inline_keyboard": [
@@ -352,15 +409,8 @@ function pindahKePertanyaanBerikutnya(chatId, token) {
       [tombolHubungiAdminWA()]
     ]};
 
-    // Jika tag tidak ada di kamus, tampilkan info tambahan agar admin tahu
-    var infoAutoTag = isAutoQuestion
-      ? "\n\n_💡 Tag `{{" + tagSekarang + "}}` belum ada di Kamus_Placeholder. " +
-        "Tambahkan ke sheet untuk pertanyaan yang lebih deskriptif._"
-      : "";
-
     kirimPesanSaaS(chatId,
-      "✏️ *Pertanyaan " + (idx + 1) + "/" + tags.length + ":*\n\n" +
-      kalimatTanya + infoAutoTag,
+      "✏️ *Pertanyaan " + (idx + 1) + "/" + tags.length + ":*\n\n" + kalimatTanya,
       kbOpsi, token);
 
   } else {

@@ -198,6 +198,115 @@ function prosesFiturAdminSaaS(update, config) {
     return true;
   }
 
+  // ── /admin cek_template [ID] ──────────────────────────────────────
+  // Pindai semua template RHK milik klien, deteksi placeholder, dan
+  // otomatis tambahkan yang belum ada ke Kamus_Placeholder.
+  if (text.indexOf("/admin cek_template ") === 0) {
+    var idCek = text.replace("/admin cek_template ", "").trim();
+    if (!idCek) {
+      kirimPesanSaaS(chatId,
+        "💡 Format: `/admin cek_template [Chat_ID]`", null, config.BOT_TOKEN);
+      return true;
+    }
+    var rcSh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("RHK_Config");
+    var rcD  = rcSh.getDataRange().getValues();
+    var semuaTag = [], jmlTpl = 0, tplKosong = 0;
+    for (var r = 1; r < rcD.length; r++) {
+      if (rcD[r][0].toString() !== idCek) continue;
+      var tplId = (rcD[r][4] || "").toString().trim();
+      if (!tplId) { tplKosong++; continue; }
+      jmlTpl++;
+      pindaiTagTemplate(tplId).forEach(function(t) {
+        if (semuaTag.indexOf(t) === -1) semuaTag.push(t);
+      });
+    }
+    if (jmlTpl === 0) {
+      kirimPesanSaaS(chatId,
+        "⚠️ Tidak ada `Template_ID` terisi untuk `" + idCek + "` di sheet RHK_Config" +
+        (tplKosong ? " (" + tplKosong + " baris Template_ID kosong)" : "") + ".",
+        null, config.BOT_TOKEN);
+      return true;
+    }
+    var tagBaruCek = sinkronkanKamusDariTag(semuaTag);
+    kirimPesanSaaS(chatId,
+      "🧩 *CEK TEMPLATE — `" + idCek + "`*\n\n" +
+      "📄 Template terbaca : *" + jmlTpl + "*\n" +
+      "🏷️ Total placeholder: *" + semuaTag.length + "*\n" +
+      (semuaTag.length ? "`" + semuaTag.join("`, `") + "`\n\n" : "\n") +
+      (tagBaruCek.length
+        ? "✅ *" + tagBaruCek.length + "* tag baru ditambahkan ke Kamus_Placeholder:\n`" +
+          tagBaruCek.join("`, `") + "`\n\n_Perbaiki kalimat pertanyaannya di sheet bila perlu._"
+        : "✅ Semua placeholder sudah ada di Kamus_Placeholder."),
+      null, config.BOT_TOKEN);
+    return true;
+  }
+
+  // ── /admin ringkasan ──────────────────────────────────────────────
+  // Dashboard operasional cepat: perlu approve, aktif, akan expired, antrian.
+  if (text === "/admin ringkasan") {
+    var ss     = SpreadsheetApp.getActiveSpreadsheet();
+    var cShR   = ss.getSheetByName("Client_SaaS");
+    var vR     = cShR.getDataRange().getValues();
+    var aktif = 0, pending = 0, tungguBukti = 0, akanExp = 0;
+    var now    = new Date();
+    for (var k = 1; k < vR.length; k++) {
+      var st   = vR[k][3];
+      var sesi = (vR[k][8] || "").toString();
+      if (st === "AKTIF") {
+        aktif++;
+        if (vR[k][4]) {
+          var sisaH = Math.ceil((new Date(vR[k][4]) - now) / 86400000);
+          if (sisaH >= 0 && sisaH <= 7) akanExp++;
+        }
+      } else if (st !== "NONAKTIF") {
+        pending++;
+      }
+      if (sesi === "TUNGGU_BUKTI_BAYAR") tungguBukti++;
+    }
+    // Hitung transaksi hari ini (LUNAS) + omzet
+    var trxSh = ss.getSheetByName("Transaksi");
+    var lunasHariIni = 0, omzetHariIni = 0;
+    if (trxSh) {
+      var tD = trxSh.getDataRange().getValues();
+      var hariIni = Utilities.formatDate(now, "GMT+7", "yyyy-MM-dd");
+      for (var t = 1; t < tD.length; t++) {
+        if ((tD[t][7] || "").toString().toUpperCase() !== "LUNAS") continue;
+        if (Utilities.formatDate(new Date(tD[t][0]), "GMT+7", "yyyy-MM-dd") !== hariIni) continue;
+        lunasHariIni++;
+        omzetHariIni += parseInt(tD[t][4] || 0) || 0;
+      }
+    }
+    // Antrian pending
+    var aqSh = ss.getSheetByName("Antrian_Request");
+    var qPending = 0, qFailed = 0;
+    if (aqSh) {
+      var qD = aqSh.getDataRange().getValues();
+      for (var q = 1; q < qD.length; q++) {
+        if (qD[q][5] === "PENDING")     qPending++;
+        else if (qD[q][5] === "FAILED") qFailed++;
+      }
+    }
+    kirimPesanSaaS(chatId,
+      "📊 *RINGKASAN OPERASIONAL*\n" +
+      "_" + Utilities.formatDate(now, "GMT+7", "dd/MM/yyyy HH:mm") + " WIB_\n" +
+      "━━━━━━━━━━━━━━━━━━━━\n" +
+      "⏳ *PERLU TINDAKAN:*\n" +
+      "   🧾 Tunggu bukti bayar : *" + tungguBukti + "*\n" +
+      "   🟠 Pendaftaran proses : *" + pending + "*\n\n" +
+      "👥 *KLIEN:*\n" +
+      "   🟢 Aktif      : *" + aktif + "*\n" +
+      "   ⏰ Akan expired (≤7 hari): *" + akanExp + "*\n\n" +
+      "💰 *HARI INI:*\n" +
+      "   ✅ Lunas : *" + lunasHariIni + "* transaksi\n" +
+      "   💵 Omzet : *Rp " + omzetHariIni.toLocaleString("id-ID") + "*\n\n" +
+      "⚙️ *ANTRIAN:* PENDING *" + qPending + "* | FAILED *" + qFailed + "*",
+      {"inline_keyboard": [
+        [{"text":"📋 Pendaftaran Macet","callback_data":"ADM_CEK_DAFTAR"},
+         {"text":"🔄 Cek Antrian","callback_data":"ADM_CEK_ANTRIAN"}]
+      ]}, config.BOT_TOKEN);
+    return true;
+  }
+
   // ── /admin cek_sistem | /admin ────────────────────────────────────
   if (text === "/admin cek_sistem" || text === "/admin") {
     var cSh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Client_SaaS");
@@ -255,7 +364,9 @@ function prosesFiturAdminSaaS(update, config) {
       "▪️ `/admin aktifkan [ID] [bulan]` — Aktifkan akun\n" +
       "▪️ `/admin kirim_template [ID]` — Kirim template ke klien\n" +
       "▪️ `/admin follow_up [ID]` — Info detail + aksi klien\n" +
-      "▪️ `/admin follow_up_semua` — Daftar klien expired/hampir\n\n" +
+      "▪️ `/admin follow_up_semua` — Daftar klien expired/hampir\n" +
+      "▪️ `/admin ringkasan` — Ringkasan operasional harian\n" +
+      "▪️ `/admin cek_template [ID]` — Pindai placeholder template klien\n\n" +
       "━━━ *PERINTAH ANTRIAN (QUEUE)* ━━━\n" +
       "▪️ `/admin cek_antrian` — Status antrian saat ini\n" +
       "▪️ `/admin bersihkan_antrian` — Hapus item FAILED\n" +
@@ -581,6 +692,26 @@ function prosesUnduhTemplateWordKlien(chatId, documentObj, config) {
       {"inline_keyboard": baris}, config.BOT_TOKEN);
   }
 
+  // ── Bantu admin: pindai placeholder template & sinkronkan Kamus ──
+  if (templateId) {
+    try {
+      var tagTpl  = pindaiTagTemplate(templateId);
+      var tagBaru = sinkronkanKamusDariTag(tagTpl);
+      kirimPesanSaaS(config.ADMIN_CHAT_ID,
+        "🧩 *Placeholder Terdeteksi di Template*\n\n" +
+        "👤 " + (klien.Nama_Pendaftar||"—") + " (`" + chatId + "`)\n" +
+        "🏷️ " + (tagTpl.length ? "`" + tagTpl.join("`, `") + "`"
+                               : "_Tidak ada placeholder kustom (selain HARI/TANGGAL/FOTO)._") + "\n\n" +
+        (tagBaru.length
+          ? "✅ *" + tagBaru.length + "* tag baru otomatis ditambahkan ke *Kamus_Placeholder*.\n" +
+            "Periksa & perbaiki kalimat pertanyaannya di sheet bila perlu."
+          : "✅ Semua placeholder sudah ada di Kamus_Placeholder."),
+        null, config.BOT_TOKEN);
+    } catch (eScanU) {
+      _logSistem("WARN_SCAN_TPL", chatId + " | " + eScanU.toString());
+    }
+  }
+
   // ── Alert DARURAT: klien baru butuh aktivasi segera ──────────────
   kirimAlertDarurat(config,
     "KLIEN BARU BUTUH AKTIVASI",
@@ -669,6 +800,10 @@ function buatInvoiceOtonomSaaS(chatId, durasiBulan, config) {
   props.setProperty("pending_total_" + chatId, nominalTotal.toString());
   props.setProperty("pending_bulan_" + chatId, durasiBulan);
   perbaruiKolomKlien(chatId, "State_Sesi", "TUNGGU_BUKTI_BAYAR");
+
+  // Catat ke buku besar Transaksi (status awal: DITAGIHKAN)
+  _catatTransaksi(chatId, klien.Nama_Pendaftar, durasiBulan, nominalTotal,
+                  kodeUnik, trxId, "DITAGIHKAN", "Invoice dibuat");
 
   // ── Ambil payload QRIS statis (sheet diprioritaskan, lihat 10_QRIS.js) ──
   var qrisStatis = ambilPayloadQrisStatis(config);
@@ -884,6 +1019,21 @@ function _logSistem(tipe, detail) {
   if (ls) ls.appendRow([new Date(), tipe, detail]);
 }
 
+// ── Catat transaksi ke buku besar (sheet Transaksi) ──────────────
+// status: DITAGIHKAN | LUNAS | DITOLAK
+function _catatTransaksi(chatId, nama, paketBulan, nominal, kodeUnik, trxId, status, keterangan) {
+  try {
+    var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Transaksi");
+    if (!sh) return;
+    sh.appendRow([
+      new Date(), chatId.toString(), nama || "", paketBulan || "",
+      nominal || "", kodeUnik || "", trxId || "", status || "", keterangan || ""
+    ]);
+  } catch (e) {
+    _logSistem("ERR_CATAT_TRX", chatId + " | " + e.toString());
+  }
+}
+
 
 // ====================================================================
 // APPROVE / REJECT PEMBAYARAN
@@ -906,6 +1056,12 @@ function eksekusiApprovePembayaranKlien(callbackDataStr, config) {
   perbaruiKolomKlien(targetId, "Warning_Sent",  "");
 
   var props = PropertiesService.getScriptProperties();
+  // Baca nilai pending SEBELUM dihapus → untuk pencatatan transaksi LUNAS
+  var trxLunas = props.getProperty("pending_trx_"   + targetId) || "";
+  var totLunas = props.getProperty("pending_total_" + targetId) || "";
+  _catatTransaksi(targetId, targetKlien.Nama_Pendaftar, jmlBulan, totLunas,
+                  (totLunas ? (parseInt(totLunas) % 1000) : ""), trxLunas,
+                  "LUNAS", "Pembayaran disetujui (" + jmlBulan + " bln)");
   props.deleteProperty("pending_trx_"   + targetId);
   props.deleteProperty("pending_total_" + targetId);
   props.deleteProperty("pending_bulan_" + targetId);

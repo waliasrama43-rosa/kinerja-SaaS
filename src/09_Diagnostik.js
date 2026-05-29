@@ -156,12 +156,22 @@ function pasangWebhookOtomatis() {
     return;
   }
 
+  // ── Secret token via query param (anti-POST palsu ke /exec publik) ──
+  var sp     = PropertiesService.getScriptProperties();
+  var secret = sp.getProperty("WEBHOOK_SECRET");
+  if (!secret) {
+    secret = Utilities.getUuid().replace(/-/g, "");
+    sp.setProperty("WEBHOOK_SECRET", secret);
+  }
+  var urlFinal = url + (url.indexOf("?") === -1 ? "?" : "&") + "s=" + secret;
+
   var res = JSON.parse(UrlFetchApp.fetch(
-    "https://api.telegram.org/bot" + config.BOT_TOKEN + "/setWebhook?url=" + encodeURIComponent(url) +
+    "https://api.telegram.org/bot" + config.BOT_TOKEN + "/setWebhook?url=" + encodeURIComponent(urlFinal) +
     "&drop_pending_updates=true",
     { muteHttpExceptions: true }).getContentText());
-  console.log("Hasil setWebhook ke:\n  " + url + "\n\n" + JSON.stringify(res, null, 2));
-  if (res.ok) console.log("\n✅ Webhook terpasang. Kirim /start ke bot untuk menguji.");
+  console.log("Hasil setWebhook ke:\n  " + urlFinal.replace(secret, "***SECRET***") +
+              "\n\n" + JSON.stringify(res, null, 2));
+  if (res.ok) console.log("\n✅ Webhook + secret terpasang. Kirim /start ke bot untuk menguji.");
 }
 
 /**

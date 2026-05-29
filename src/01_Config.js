@@ -131,6 +131,12 @@ function setupStrukturDatabaseSaaS() {
     // ── Log_Sistem: catatan event & error ────────────────────────
     "Log_Sistem": [["Timestamp", "Tipe", "Detail"]],
 
+    // ── Transaksi: buku besar pembayaran (audit trail keuangan) ──
+    "Transaksi": [[
+      "Timestamp", "Chat_ID", "Nama", "Paket_Bulan",
+      "Nominal", "Kode_Unik", "Trx_ID", "Status", "Keterangan"
+    ]],
+
     // ── Antrian_Request: queue engine untuk skalabilitas ─────────
     // Kolom:
     //   ID          : ID unik antrian (timestamp + random)

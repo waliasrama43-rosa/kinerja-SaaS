@@ -393,7 +393,8 @@ function pasangSemuaTrigger() {
     "resetLimitHarianOtonom",
     "cekDanKirimWarningMasaAktif",
     "cekDanAutoBlockExpired",
-    "cekDanIngatkanPendaftaranMacet"
+    "cekDanIngatkanPendaftaranMacet",
+    "backupHarianDatabase"
   ];
 
   // Hapus semua trigger lama milik fungsi-fungsi di atas agar tidak dobel
@@ -402,49 +403,6 @@ function pasangSemuaTrigger() {
     if (daftarFungsi.indexOf(existing[x].getHandlerFunction()) !== -1) {
       ScriptApp.deleteTrigger(existing[x]);
     }
-
-    // Kirim pesan via Telegram bot
-    try {
-      kirimPesanSaaS(chatId, teksWarning, kbWarning, token);
-
-      // Simpan flag agar tidak dikirim ulang
-      var flagBaru = warningSent ? warningSent + "," + flagKey : flagKey;
-      sheet.getRange(i + 1, colWarning + 1).setValue(flagBaru);
-      terkirim++;
-
-      // ── Notif ke admin juga ──────────────────────────────────────
-      var noWAAdmin = noWA || "Tidak tersedia";
-      var pesanWALink = buatLinkWA(noWA,
-        "Halo Pak/Bu " + nama + ", masa aktif bot RHK Anda " +
-        (sisaHari === 0 ? "berakhir HARI INI" : "tersisa " + sisaHari + " hari") +
-        ". Ketik /bayar di bot untuk perpanjangan. Terima kasih 🙏");
-
-      var kbAdminNotif = {"inline_keyboard": []};
-      if (pesanWALink) {
-        kbAdminNotif.inline_keyboard.push([{
-          "text": "💬 WA " + nama, "url": pesanWALink
-        }]);
-      }
-      kbAdminNotif.inline_keyboard.push([{
-        "text": "📊 Follow Up Detail", "callback_data": "ADM_FU_" + chatId
-      }]);
-
-      kirimPesanSaaS(config.ADMIN_CHAT_ID,
-        "🔔 *Notif Warning H-" + sisaHari + " Terkirim*\n\n" +
-        "👤 *" + nama + "* (`" + chatId + "`)\n" +
-        "📱 No. WA: `" + noWAAdmin + "`\n" +
-        "📅 Expired: *" + Utilities.formatDate(expiry, "GMT+7", "dd/MM/yyyy") + "*",
-        kbAdminNotif, token);
-
-    } catch(eWarn) {
-      var logSheet = ss.getSheetByName("Log_Sistem");
-      if (logSheet) {
-        logSheet.appendRow([new Date(), "WARN_ERROR",
-          "Gagal kirim warning H-" + sisaHari + " ke " + chatId + ": " + eWarn.toString()]);
-      }
-    }
-
-    Utilities.sleep(300); // jeda antar pengiriman
   }
 
   // ── 1. Queue Worker: tiap 1 menit ─────────────────────────────
@@ -468,17 +426,80 @@ function pasangSemuaTrigger() {
   ScriptApp.newTrigger("cekDanIngatkanPendaftaranMacet")
     .timeBased().atHour(9).nearMinute(0).everyDays(1).create();
 
+  // ── 6. Backup harian database: 23:30 WIB ──────────────────────
+  ScriptApp.newTrigger("backupHarianDatabase")
+    .timeBased().atHour(23).nearMinute(30).everyDays(1).create();
+
   // Log konfirmasi
-  Logger.log("✅ 5 trigger berhasil dipasang:");
+  Logger.log("✅ 6 trigger berhasil dipasang:");
   Logger.log("   ⭐ prosesBatchAntrian              → tiap 1 menit");
   Logger.log("   • resetLimitHarianOtonom          → 00:00 WIB");
   Logger.log("   • cekDanKirimWarningMasaAktif      → 08:00 WIB");
   Logger.log("   • cekDanAutoBlockExpired           → 08:30 WIB");
   Logger.log("   • cekDanIngatkanPendaftaranMacet   → 09:00 WIB");
+  Logger.log("   • backupHarianDatabase             → 23:30 WIB");
 
   var ls = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Log_Sistem");
   if (ls) ls.appendRow([new Date(), "TRIGGER_SETUP",
-    "5 trigger dipasang. Queue worker aktif tiap 1 menit."]);
+    "6 trigger dipasang. Queue worker aktif tiap 1 menit."]);
+}
+
+// ====================================================================
+// 6. BACKUP HARIAN DATABASE (23:30 WIB)
+// ====================================================================
+// Menyalin seluruh Spreadsheet ke folder backup di Drive admin, lalu
+// menyisakan maksimal BACKUP_MAX_SIMPAN salinan terbaru (rotasi).
+// Tujuan: jaring pengaman bila terjadi kerusakan data / insiden darurat.
+// ====================================================================
+function backupHarianDatabase() {
+  var BACKUP_MAX_SIMPAN = 14;   // simpan 14 backup terakhir (≈2 minggu)
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  try {
+    // Folder backup di dalam folder induk admin
+    var adminRoot = DriveApp.getFolderById(SAAS_CONFIG.ADMIN_ROOT_FOLDER_ID);
+    var itBackup  = adminRoot.getFoldersByName("Backup_Database_RHK");
+    var folderBak = itBackup.hasNext() ? itBackup.next()
+                                       : adminRoot.createFolder("Backup_Database_RHK");
+
+    // Salin file spreadsheet
+    var stempel  = Utilities.formatDate(new Date(), "GMT+7", "yyyy-MM-dd_HH-mm");
+    var namaBak  = "BACKUP_" + ss.getName() + "_" + stempel;
+    DriveApp.getFileById(ss.getId()).makeCopy(namaBak, folderBak);
+
+    // Rotasi: hapus backup terlama bila melebihi batas
+    var semua = [];
+    var it    = folderBak.getFiles();
+    while (it.hasNext()) {
+      var f = it.next();
+      if (f.getName().indexOf("BACKUP_") === 0) semua.push(f);
+    }
+    semua.sort(function(a, b) { return b.getDateCreated() - a.getDateCreated(); });
+    for (var i = BACKUP_MAX_SIMPAN; i < semua.length; i++) {
+      semua[i].setTrashed(true);
+    }
+
+    var ls = ss.getSheetByName("Log_Sistem");
+    if (ls) ls.appendRow([new Date(), "BACKUP_OK",
+      "Backup harian dibuat: " + namaBak + " (" + Math.min(semua.length, BACKUP_MAX_SIMPAN) + " disimpan)."]);
+
+    // Notif ringkas ke admin
+    try {
+      var cfg = ambilKonfigurasiSaaS();
+      kirimPesanSaaS(cfg.ADMIN_CHAT_ID,
+        "💾 *Backup Harian Berhasil*\n`" + namaBak + "`\nLokasi: folder *Backup_Database_RHK*.",
+        null, cfg.BOT_TOKEN);
+    } catch (eN) { /* abaikan notif gagal */ }
+
+  } catch (eBak) {
+    var ls2 = ss.getSheetByName("Log_Sistem");
+    if (ls2) ls2.appendRow([new Date(), "BACKUP_ERROR", eBak.toString()]);
+    try {
+      var cfg2 = ambilKonfigurasiSaaS();
+      kirimPesanSaaS(cfg2.ADMIN_CHAT_ID,
+        "⚠️ *Backup harian GAGAL.*\n" + eBak.toString() +
+        "\n\nPeriksa ADMIN_ROOT_FOLDER_ID & izin Drive.", null, cfg2.BOT_TOKEN);
+    } catch (eN2) {}
+  }
 }
 
 // ====================================================================

@@ -40,16 +40,25 @@ function cariAtauDaftarKlienSaaS(chatId, usernameTelegram) {
 }
 
 function perbaruiKolomKlien(chatId, namaKolom, nilaiBaru) {
-  var sheet    = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Client_SaaS");
-  var data     = sheet.getDataRange().getValues();
-  var colIndex = data[0].indexOf(namaKolom);
-  if (colIndex === -1) return;
+  // LockService: cegah race condition antara webhook & worker antrian
+  // yang bisa menulis baris klien bersamaan (data saling menimpa).
+  var lock = LockService.getScriptLock();
+  try { lock.waitLock(10000); } catch (eLock) { /* best-effort bila lock tak didapat */ }
+  try {
+    var sheet    = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Client_SaaS");
+    var data     = sheet.getDataRange().getValues();
+    var colIndex = data[0].indexOf(namaKolom);
+    if (colIndex === -1) return;
 
-  for (var i = 1; i < data.length; i++) {
-    if (data[i][0].toString() === chatId.toString()) {
-      sheet.getRange(i + 1, colIndex + 1).setValue(nilaiBaru);
-      break;
+    for (var i = 1; i < data.length; i++) {
+      if (data[i][0].toString() === chatId.toString()) {
+        sheet.getRange(i + 1, colIndex + 1).setValue(nilaiBaru);
+        SpreadsheetApp.flush();
+        break;
+      }
     }
+  } finally {
+    try { lock.releaseLock(); } catch (eRel) {}
   }
 }
 
