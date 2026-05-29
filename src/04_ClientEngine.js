@@ -20,19 +20,32 @@ function prosesFiturKlienSaaS(update, config, token) {
         return;
       }
       if (klien.Status_Akses === "REG_WIZARD" || klien.Status_Akses === "PENDING_RHK") {
-        kirimPesanSaaS(chatId, "✨ Halo Pak/Bu *" + sapaan + "*!\n\nPendaftaran Anda sudah kami amankan. Saat ini Admin sedang melakukan verifikasi berkas dan mengonfigurasi susunan menu RHK khusus untuk Anda. Mohon ditunggu ya, kami akan segera memberikan notifikasi jika sistem sudah siap! 🥰", null, token);
+        var kbHubungiPending = {"inline_keyboard": [
+          [{"text": "📞 Tanya Status ke Admin", "callback_data": "HUBUNGI_ADMIN"}]
+        ]};
+        kirimPesanSaaS(chatId, "✨ Halo Pak/Bu *" + sapaan + "*!\n\nPendaftaran Anda sudah kami amankan. Saat ini Admin sedang melakukan verifikasi berkas dan mengonfigurasi susunan menu RHK khusus untuk Anda. Mohon ditunggu ya, kami akan segera memberikan notifikasi jika sistem sudah siap! 🥰", kbHubungiPending, token);
         return;
       }
       if (klien.Status_Akses !== "AKTIF") {
-        kirimPesanSaaS(chatId, "🔒 Mohon maaf, status akses akun Anda saat ini sedang dinonaktifkan oleh Admin. Silakan hubungi Admin untuk bantuan aktivasi.", null, token);
+        var kbHubungiNonaktif = {"inline_keyboard": [
+          [{"text": "📞 Hubungi Admin untuk Aktivasi", "callback_data": "HUBUNGI_ADMIN"}]
+        ]};
+        kirimPesanSaaS(chatId, "🔒 Mohon maaf, status akses akun Anda saat ini sedang dinonaktifkan oleh Admin. Silakan hubungi Admin untuk bantuan aktivasi.", kbHubungiNonaktif, token);
         return;
       }
       if (new Date() > new Date(klien.Masa_Aktif)) {
-        kirimPesanSaaS(chatId, "⏰ Oh tidak! Masa aktif paket premium Anda telah berakhir pada " + Utilities.formatDate(new Date(klien.Masa_Aktif), "GMT+7", "dd/MM/yyyy") + ".\n\nYuk, lakukan perpanjangan lisensi Anda terlebih dahulu dengan mengetik /bayar atau /langganan 💎", null, token);
+        var kbHubungiExpired = {"inline_keyboard": [
+          [{"text": "💎 Perpanjang Sekarang", "callback_data": "SHORTCUT_BAYAR"}],
+          [{"text": "📞 Hubungi Admin", "callback_data": "HUBUNGI_ADMIN"}]
+        ]};
+        kirimPesanSaaS(chatId, "⏰ Oh tidak! Masa aktif paket premium Anda telah berakhir pada " + Utilities.formatDate(new Date(klien.Masa_Aktif), "GMT+7", "dd/MM/yyyy") + ".\n\nYuk, lakukan perpanjangan lisensi Anda terlebih dahulu! 💎", kbHubungiExpired, token);
         return;
       }
       if (parseInt(klien.Limit_Harian) <= 0) {
-        kirimPesanSaaS(chatId, "🛑 Wah, Anda sangat produktif hari ini! Namun jatah Anda telah mencapai *Limit Maksimal* untuk hari ini. Silakan kembali melakukan pelaporan besok hari setelah pukul 00:01 malam ya, Pak/Bu! 🌟", null, token);
+        var kbHubungiLimit = {"inline_keyboard": [
+          [{"text": "📞 Hubungi Admin untuk Tambah Limit", "callback_data": "HUBUNGI_ADMIN"}]
+        ]};
+        kirimPesanSaaS(chatId, "🛑 Wah, Anda sangat produktif hari ini! Namun jatah Anda telah mencapai *Limit Maksimal* untuk hari ini. Silakan kembali melakukan pelaporan besok hari setelah pukul 00:01 malam ya, Pak/Bu! 🌟", kbHubungiLimit, token);
         return;
       }
 
@@ -83,19 +96,66 @@ function prosesFiturKlienSaaS(update, config, token) {
 
     // 4. JARING PENGAMAN (FALLBACK / CATCH-ALL) UNTUK TEKS TIDAK DIKENAL
     if (klien.State_Sesi === "") {
-      var fallbackMsg = "🤔 *Maaf, saya tidak mengenali perintah tersebut.*\n\n" +
-                        "Silakan gunakan menu perintah yang tersedia:\n" +
-                        "🔸 `/lapor` - Mulai pelaporan RHK\n" +
-                        "🔸 `/bayar` - Info langganan paket\n" +
-                        "🔸 `/batal` - Batalkan proses saat ini";
-      kirimPesanSaaS(chatId, fallbackMsg, null, token);
+      // Kirim notifikasi diam-diam ke Admin bahwa ada klien yang mengetik perintah tidak dikenal
+      var config = ambilKonfigurasiSaaS();
+      var notifAdmin = "🔔 *INFO: Perintah Tidak Dikenal dari Klien*\n\n" +
+                       "👤 Klien: *" + sapaan + "* (`" + chatId + "`)\n" +
+                       "💬 Teks dikirim: `" + text + "`\n" +
+                       "📌 Status Akun: `" + klien.Status_Akses + "`\n\n" +
+                       "_Klien mungkin membutuhkan bantuan atau ada fitur yang belum tersedia._";
+      kirimPesanSaaS(config.ADMIN_CHAT_ID, notifAdmin, null, token);
+
+      // Balas ke klien dengan menu lengkap + tombol Hubungi Admin
+      var kbFallback = {"inline_keyboard": [
+        [{"text": "📋 Mulai Laporan RHK", "callback_data": "SHORTCUT_LAPOR"}],
+        [{"text": "💎 Info & Perpanjang Paket", "callback_data": "SHORTCUT_BAYAR"}],
+        [{"text": "📞 Hubungi Admin Langsung", "callback_data": "HUBUNGI_ADMIN"}]
+      ]};
+      var fallbackMsg = "🤔 *Maaf, perintah tersebut tidak saya kenali.*\n\n" +
+                        "Silakan pilih menu di bawah ini atau gunakan perintah:\n" +
+                        "🔸 `/lapor` — Mulai pelaporan RHK\n" +
+                        "🔸 `/bayar` — Info & perpanjang langganan\n" +
+                        "🔸 `/batal` — Batalkan proses saat ini\n\n" +
+                        "Jika butuh bantuan lebih lanjut, silakan hubungi Admin kami! 👇";
+      kirimPesanSaaS(chatId, fallbackMsg, kbFallback, token);
+
     } else {
-      var warningMsg = "⚠️ *Anda masih dalam sesi pengisian data (" + klien.State_Sesi + ").*\n\n" +
-                       "Mohon ikuti instruksi bot yang terakhir, atau ketik `/batal` jika Anda ingin mereset dan mengulang dari awal.";
-      kirimPesanSaaS(chatId, warningMsg, null, token);
+      // Klien masih di tengah sesi — ingatkan + tetap sediakan tombol Hubungi Admin
+      var kbDalamSesi = {"inline_keyboard": [
+        [{"text": "🔄 Batalkan & Mulai Ulang", "callback_data": "SHORTCUT_BATAL"}],
+        [{"text": "📞 Hubungi Admin", "callback_data": "HUBUNGI_ADMIN"}]
+      ]};
+      var warningMsg = "⚠️ *Anda masih dalam sesi pengisian data.*\n\n" +
+                       "Mohon ikuti instruksi bot yang terakhir, atau tekan *Batalkan* di bawah jika ingin mengulang dari awal.";
+      kirimPesanSaaS(chatId, warningMsg, kbDalamSesi, token);
     }
     return;
   }
+}
+
+// ====================================================================
+// FUNGSI PEMBANTU: Tampilkan tombol Hubungi Admin yang bisa dipanggil
+// dari mana saja (digunakan oleh handler di 07_MainWebhook.js)
+// ====================================================================
+function tampilkanKontakAdmin(chatId, token) {
+  var config = ambilKonfigurasiSaaS();
+  var kbKontak = {"inline_keyboard": [
+    [{"text": "💬 Chat Admin via Telegram", "url": "https://t.me/" + SAAS_CONFIG.ADMIN_TELEGRAM.replace("@", "")}],
+    [{"text": "📱 Chat Admin via WhatsApp", "url": SAAS_CONFIG.ADMIN_WHATSAPP_LINK}]
+  ]};
+  var pesanKontak = "📞 *HUBUNGI ADMIN PLATFORM RHK*\n\n" +
+                    "Halo Pak/Bu *" + chatId + "*! Tim Admin kami siap membantu Anda.\n\n" +
+                    "Silakan pilih saluran komunikasi yang paling nyaman:\n\n" +
+                    "🕐 _Jam layanan: Senin – Jumat, 08.00 – 17.00 WIB_\n\n" +
+                    "Ceritakan kendala Anda dan Admin akan segera merespons! 🙏";
+  kirimPesanSaaS(chatId, pesanKontak, kbKontak, token);
+
+  // Notif ke admin supaya tahu ada klien yang menghubungi
+  var notifKlienHubungi = "🔔 *Ada Klien Menghubungi Admin!*\n\n" +
+                           "👤 Chat ID: `" + chatId + "`\n" +
+                           "⏰ Waktu: " + Utilities.formatDate(new Date(), "GMT+7", "dd/MM/yyyy HH:mm") + " WIB\n\n" +
+                           "_Klien menekan tombol 'Hubungi Admin' dan sedang menunggu respons Anda._";
+  kirimPesanSaaS(config.ADMIN_CHAT_ID, notifKlienHubungi, null, token);
 }
 
 // [Fungsi tampilkanMenuRHKKlien, tampilkanMenuTanggalSaaS, analisisDanMulaiPertanyaanDoc, pindahKePertanyaanBerikutnya, lompatKeFaseFoto, tampilkanMenuPaketKomersial tetap utuh di bawah sini]
@@ -118,7 +178,10 @@ function tampilkanMenuRHKKlien(chatId, token) {
   });
   
   if (buttons.length === 0) {
-    kirimPesanSaaS(chatId, "⚠️ *Menu RHK Belum Siap!* Admin sedang merakit konfigurasi template dokumen Anda. Mohon hubungi Admin untuk mempercepat proses. 🙏", null, token);
+    var kbRhkKosong = {"inline_keyboard": [
+      [{"text": "📞 Hubungi Admin untuk Setup Menu", "callback_data": "HUBUNGI_ADMIN"}]
+    ]};
+    kirimPesanSaaS(chatId, "⚠️ *Menu RHK Belum Siap!* Admin sedang merakit konfigurasi template dokumen Anda. Mohon hubungi Admin untuk mempercepat proses. 🙏", kbRhkKosong, token);
   } else {
     kirimPesanSaaS(chatId, "📋 *Silakan pilih salah satu RHK Kerja yang ingin Anda laporkan hari ini, Pak/Bu:*", {"inline_keyboard": buttons}, token);
   }
@@ -199,7 +262,8 @@ function pindahKePertanyaanBerikutnya(chatId, token) {
     }
     
     var kbOpsi = {"inline_keyboard": [
-      [{"text": "⚠️ Laporkan Salah Setting Admin", "callback_data": "KOMPLAIN_TAG_" + tagSekarang}]
+      [{"text": "⚠️ Laporkan Salah Setting Admin", "callback_data": "KOMPLAIN_TAG_" + tagSekarang}],
+      [{"text": "📞 Hubungi Admin", "callback_data": "HUBUNGI_ADMIN"}]
     ]};
     
     kirimPesanSaaS(chatId, "✨ *Pertanyaan " + (idx + 1) + "/" + tags.length + ":*\n" + kalimatTanya, kbOpsi, token);

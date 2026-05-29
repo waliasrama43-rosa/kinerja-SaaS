@@ -150,6 +150,67 @@ function prosesFiturAdminSaaS(update, config) {
     return true;
   }
 
+  // ── FITUR BARU: /admin daftar_chatid ────────────────────────────
+  // Menampilkan daftar lengkap Chat ID semua klien beserta status
+  if (text === "/admin daftar_chatid") {
+    var dSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Client_SaaS");
+    var dData = dSheet.getDataRange().getValues();
+    
+    if (dData.length <= 1) {
+      kirimPesanSaaS(chatId, "📭 Belum ada klien yang terdaftar di database.", null, config.BOT_TOKEN);
+      return true;
+    }
+
+    // Bagi pengiriman per 30 baris agar tidak melebihi batas pesan Telegram (4096 karakter)
+    var BATCH_SIZE = 30;
+    var batchPesan = [];
+    var barisSaatIni = "📋 *DAFTAR CHAT ID KLIEN TERDAFTAR*\n" +
+                       "_(Total: " + (dData.length - 1) + " klien)_\n\n";
+
+    var emojiStatus = {
+      "AKTIF"       : "🟢",
+      "NONAKTIF"    : "🔴",
+      "BELUM_DAFTAR": "⚪",
+      "REG_WIZARD"  : "🟡",
+      "PENDING_RHK" : "🟠"
+    };
+
+    for (var d = 1; d < dData.length; d++) {
+      var nomD      = d;
+      var namaDftr  = dData[d][1] || "—";
+      var idChat    = dData[d][0];
+      var statusD   = dData[d][3] || "BELUM_DAFTAR";
+      var masaAktif = dData[d][4] ? Utilities.formatDate(new Date(dData[d][4]), "GMT+7", "dd/MM/yy") : "—";
+      var totalCetak = dData[d][6] || 0;
+      var emoji      = emojiStatus[statusD] || "⚫";
+
+      barisSaatIni += nomD + ". " + emoji + " *" + namaDftr + "*\n" +
+                      "   🆔 `" + idChat + "`\n" +
+                      "   📌 Status: `" + statusD + "`" +
+                      (statusD === "AKTIF" ? " | Exp: `" + masaAktif + "`" : "") +
+                      " | 📄 Cetak: " + totalCetak + "x\n\n";
+
+      // Kirim batch jika sudah mencapai BATCH_SIZE atau baris terakhir
+      if ((d % BATCH_SIZE === 0) || d === dData.length - 1) {
+        batchPesan.push(barisSaatIni);
+        barisSaatIni = "📋 _(Lanjutan halaman " + (batchPesan.length + 1) + ")_\n\n";
+      }
+    }
+
+    // Kirim semua batch satu per satu
+    for (var b = 0; b < batchPesan.length; b++) {
+      kirimPesanSaaS(chatId, batchPesan[b], null, config.BOT_TOKEN);
+    }
+
+    // Sertakan tombol aksi cepat untuk kemudahan admin
+    var kbAksiCepat = {"inline_keyboard": [
+      [{"text": "📊 Cek Sistem", "callback_data": "ADM_CEK_SISTEM"},
+       {"text": "📋 Cek Pendaftaran Macet", "callback_data": "ADM_CEK_DAFTAR"}]
+    ]};
+    kirimPesanSaaS(chatId, "⚡ *Aksi cepat admin:*", kbAksiCepat, config.BOT_TOKEN);
+    return true;
+  }
+
   // FITUR PENGAWASAN/AUDIT BERKALA STATUS PENDAFTARAN KLIEN YANG MACET
   if (text === "/admin cek_pendaftaran") {
     var shClient = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Client_SaaS");
@@ -222,6 +283,7 @@ function prosesFiturAdminSaaS(update, config) {
       "▪️ `/admin bantuan` — Tampilkan panduan ini\n" +
       "▪️ `/admin broadcast [pesan]` — Kirim pesan ke semua klien aktif\n" +
       "▪️ `/admin blokir [ID] [alasan]` — Blokir akun klien\n" +
+      "▪️ `/admin aktifkan [ID]` — Aktifkan akun klien\n\n" +
       "▪️ `/admin aktifkan [ID] [bulan]` — Aktifkan akun klien\n" +
       "▪️ `/admin kirim_template [ID]` — Kirim ulang file template ke klien\n" +
       "▪️ `/admin follow_up [ID]` — Info lengkap + deeplink WA klien\n" +
