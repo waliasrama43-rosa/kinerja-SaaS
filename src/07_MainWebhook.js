@@ -161,9 +161,15 @@ function doPost(e) {
       }
     }
   } catch (err) {
-    // Penyelamat anti-crash otonom Log_Sistem
-    var logSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Log_Sistem");
-    if (logSheet) logSheet.appendRow([new Date(), "CRITICAL DOPOST ERROR", err.toString()]);
+    // Selalu catat ke Stackdriver/Executions agar error TIDAK pernah tersembunyi
+    console.error("CRITICAL DOPOST ERROR: " + err.toString() + " | Stack: " + (err.stack || "-"));
+    try {
+      var ssLog = SpreadsheetApp.getActiveSpreadsheet();
+      var logSheet = ssLog ? ssLog.getSheetByName("Log_Sistem") : null;
+      if (logSheet) logSheet.appendRow([new Date(), "CRITICAL DOPOST ERROR", err.toString()]);
+    } catch (e2) {
+      console.error("Gagal menulis Log_Sistem: " + e2.toString());
+    }
   }
   return HtmlService.createHtmlOutput("OK");
 }
