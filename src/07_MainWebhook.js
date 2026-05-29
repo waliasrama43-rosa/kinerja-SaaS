@@ -77,6 +77,35 @@ function doPost(e) {
         return HtmlService.createHtmlOutput("OK");
       }
 
+      // ── CALLBACK ADMIN: Follow-up detail dari notif warning ────────
+      if (data.indexOf("ADM_FU_") === 0 && chatId === config.ADMIN_CHAT_ID.toString()) {
+        var fuChatId = data.replace("ADM_FU_", "");
+        tampilkanInfoFollowUp(fuChatId, chatId, config);
+        return HtmlService.createHtmlOutput("OK");
+      }
+      if (data.indexOf("ADM_MSG_") === 0 && chatId === config.ADMIN_CHAT_ID.toString()) {
+        var targetMsgId = data.replace("ADM_MSG_", "");
+        var kbMsgKlien  = {"inline_keyboard": [
+          [{"text": "💎 Perpanjang Sekarang", "callback_data": "SHORTCUT_BAYAR"}],
+          [{"text": "📞 Hubungi Admin",        "callback_data": "HUBUNGI_ADMIN"}]
+        ]};
+        kirimPesanSaaS(targetMsgId,
+          "🔔 *Pemberitahuan dari Admin Platform RHK*\n\n" +
+          "Yth. Bapak/Ibu, Admin ingin menginformasikan bahwa masa aktif langganan Anda " +
+          "akan segera berakhir atau telah berakhir.\n\n" +
+          "Silakan lakukan perpanjangan agar dapat melanjutkan pelaporan RHK Anda. 🙏",
+          kbMsgKlien, token);
+        kirimPesanSaaS(chatId, "✅ Pesan reminder berhasil dikirim ke `" + targetMsgId + "`.", null, config.BOT_TOKEN);
+        return HtmlService.createHtmlOutput("OK");
+      }
+
+      // ── CALLBACK ADMIN: Kirim ulang template ke klien ──────────────
+      if (data.indexOf("ADM_SEND_TPL_") === 0 && chatId === config.ADMIN_CHAT_ID.toString()) {
+        var targetTplId = data.replace("ADM_SEND_TPL_", "");
+        kirimTemplateKeKlien(targetTplId, chatId, config);
+        return HtmlService.createHtmlOutput("OK");
+      }
+
       if (data.indexOf("REG_JML_") === 0) {
         var jml = data.replace("REG_JML_", "");
         if (jml === "MANUAL") {
@@ -234,9 +263,15 @@ function doPost(e) {
       }
     }
   } catch (err) {
-    // Penyelamat anti-crash otonom Log_Sistem
-    var logSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Log_Sistem");
-    if (logSheet) logSheet.appendRow([new Date(), "CRITICAL DOPOST ERROR", err.toString()]);
+    // Selalu catat ke Stackdriver/Executions agar error TIDAK pernah tersembunyi
+    console.error("CRITICAL DOPOST ERROR: " + err.toString() + " | Stack: " + (err.stack || "-"));
+    try {
+      var ssLog = SpreadsheetApp.getActiveSpreadsheet();
+      var logSheet = ssLog ? ssLog.getSheetByName("Log_Sistem") : null;
+      if (logSheet) logSheet.appendRow([new Date(), "CRITICAL DOPOST ERROR", err.toString()]);
+    } catch (e2) {
+      console.error("Gagal menulis Log_Sistem: " + e2.toString());
+    }
   }
   return HtmlService.createHtmlOutput("OK");
 }

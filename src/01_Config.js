@@ -34,8 +34,20 @@ function ambilKonfigurasiSaaS() {
 function setupStrukturDatabaseSaaS() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var templateSheets = {
-    "Pengaturan": [["Kunci", "Nilai"], ["BOT_TOKEN", "8892439073:AAE-BYuT8-bEOBlYjMugLK6sCiugPVki-j0"], ["ADMIN_CHAT_ID", "927597163"]],
-    "Client_SaaS": [["Chat_ID", "Nama_Pendaftar", "Folder_Root_ID", "Status_Akses", "Masa_Aktif", "Limit_Harian", "Total_Laporan", "Catatan_Admin", "State_Sesi", "RHK_Terpilih", "Tanggal_Terpilih", "Hari_Terpilih", "Current_Placeholder_Index", "Foto_Count"]],
+    // ── Pengaturan: 3 kunci utama sistem ─────────────────────────────
+    // Kunci 1: BOT_TOKEN      — token bot Telegram dari @BotFather
+    // Kunci 2: ADMIN_CHAT_ID  — Chat ID akun Telegram admin
+    // Kunci 3: WEBHOOK_URL    — URL webhook GAS (isi setelah deploy sebagai Web App)
+    "Pengaturan": [
+      ["Kunci", "Nilai"],
+      ["BOT_TOKEN",    "8892439073:AAE-BYuT8-bEOBlYjMugLK6sCiugPVki-j0"],
+      ["ADMIN_CHAT_ID","927597163"],
+      ["WEBHOOK_URL",  "https://script.google.com/macros/s/ISI_DEPLOYMENT_ID_ANDA/exec"]
+    ],
+    // ── Client_SaaS: tambah kolom No_WA & Warning_Sent ───────────────
+    // No_WA        : nomor WhatsApp klien untuk follow-up admin
+    // Warning_Sent : catat warning terakhir yg sudah dikirim (7,3,0,BLOCKED)
+    "Client_SaaS": [["Chat_ID", "Nama_Pendaftar", "Folder_Root_ID", "Status_Akses", "Masa_Aktif", "Limit_Harian", "Total_Laporan", "Catatan_Admin", "State_Sesi", "RHK_Terpilih", "Tanggal_Terpilih", "Hari_Terpilih", "Current_Placeholder_Index", "Foto_Count", "No_WA", "Warning_Sent"]],
     "RHK_Config": [["Chat_ID", "RHK_ID", "Label_Menu", "Emoji", "Template_ID", "Folder_PDF_ID", "Folder_Foto_ID", "Min_Foto", "Max_Foto", "Urutan"]],
     "Kamus_Placeholder": [["Kode_Placeholder", "Pertanyaan_Bot"], ["LOKASI", "Di mana lokasi pelaksanaan kegiatan Anda hari ini, Pak/Bu? 📍"], ["URAIAN", "Mohon ceritakan uraian singkat mengenai jalan dan poin kegiatan tersebut: 📝"], ["TUJUAN", "Apa target utama atau tujuan yang ingin dicapai dari agenda ini? 🎯"], ["PIHAK", "Siapa saja pihak, rekan sejawat, atau partisipan yang terlibat di lokasi? 👥"], ["TL", "Bagaimana rencana Tindak Lanjut (TL) ke depan pasca kegiatan selesai? 🚀"], ["KESIMPULAN", "Tuliskan kesimpulan akhir atau ringkasan hasil kegiatan Anda: 📊"]],
 
