@@ -15,7 +15,97 @@ function doPost(e) {
       var chatId = update.callback_query.message.chat.id.toString();
       var data = update.callback_query.data;
       var klien = cariAtauDaftarKlienSaaS(chatId, "");
-      
+
+      // ── TOMBOL UNIVERSAL: HUBUNGI ADMIN ─────────────────────────────
+      // Aktif tanpa syarat — bisa ditekan kapanpun oleh siapapun
+      if (data === "HUBUNGI_ADMIN") {
+        tampilkanKontakAdmin(chatId, token);
+        return HtmlService.createHtmlOutput("OK");
+      }
+
+      // ── SHORTCUT NAVIGASI CEPAT (dari pesan fallback & batal) ───────
+      if (data === "SHORTCUT_BAYAR") {
+        tampilkanMenuPaketKomersial(chatId, token);
+        return HtmlService.createHtmlOutput("OK");
+      }
+
+      if (data === "SHORTCUT_BATAL") {
+        perbaruiKolomKlien(chatId, "State_Sesi", "");
+        var propsB = PropertiesService.getUserProperties();
+        var keysB = propsB.getKeys();
+        for (var bi = 0; bi < keysB.length; bi++) {
+          if (keysB[bi].indexOf(chatId) === 0) propsB.deleteProperty(keysB[bi]);
+        }
+        var kbSetelahBatal = {"inline_keyboard": [
+          [{"text": "📋 Mulai Laporan RHK", "callback_data": "SHORTCUT_LAPOR"}],
+          [{"text": "💎 Info Paket Langganan", "callback_data": "SHORTCUT_BAYAR"}]
+        ]};
+        kirimPesanSaaS(chatId, "✅ *Sesi berhasil dibatalkan!*\n\nData isian telah dibersihkan. Silakan mulai kembali:", kbSetelahBatal, token);
+        return HtmlService.createHtmlOutput("OK");
+      }
+
+      if (data === "SHORTCUT_LAPOR") {
+        var propsL = PropertiesService.getUserProperties();
+        var keysL = propsL.getKeys();
+        for (var li = 0; li < keysL.length; li++) {
+          if (keysL[li].indexOf(chatId) === 0) propsL.deleteProperty(keysL[li]);
+        }
+        if (klien.Status_Akses === "AKTIF" && new Date() <= new Date(klien.Masa_Aktif) && parseInt(klien.Limit_Harian) > 0) {
+          perbaruiKolomKlien(chatId, "State_Sesi", "PILIH_RHK");
+          perbaruiKolomKlien(chatId, "Foto_Count", 0);
+          tampilkanMenuRHKKlien(chatId, token);
+        } else {
+          var kbLaporBlokir = {"inline_keyboard": [
+            [{"text": "💎 Lihat Paket Langganan", "callback_data": "SHORTCUT_BAYAR"}],
+            [{"text": "📞 Hubungi Admin", "callback_data": "HUBUNGI_ADMIN"}]
+          ]};
+          kirimPesanSaaS(chatId, "🔒 Akses pelaporan belum tersedia. Pastikan akun Anda aktif dan masa berlaku masih valid ya, Pak/Bu!", kbLaporBlokir, token);
+        }
+        return HtmlService.createHtmlOutput("OK");
+      }
+
+      // ── CALLBACK AKSI CEPAT ADMIN (tombol dari /admin daftar_chatid) ─
+      if (data === "ADM_CEK_SISTEM" && chatId === config.ADMIN_CHAT_ID.toString()) {
+        var fakeCekSistemUpdate = { message: { chat: { id: chatId }, from: { first_name: "Admin" }, text: "/admin cek_sistem" } };
+        prosesFiturAdminSaaS(fakeCekSistemUpdate, config);
+        return HtmlService.createHtmlOutput("OK");
+      }
+
+      if (data === "ADM_CEK_DAFTAR" && chatId === config.ADMIN_CHAT_ID.toString()) {
+        var fakeCekDaftarUpdate = { message: { chat: { id: chatId }, from: { first_name: "Admin" }, text: "/admin cek_pendaftaran" } };
+        prosesFiturAdminSaaS(fakeCekDaftarUpdate, config);
+        return HtmlService.createHtmlOutput("OK");
+      }
+
+      // ── CALLBACK ADMIN: Follow-up detail dari notif warning ────────
+      if (data.indexOf("ADM_FU_") === 0 && chatId === config.ADMIN_CHAT_ID.toString()) {
+        var fuChatId = data.replace("ADM_FU_", "");
+        tampilkanInfoFollowUp(fuChatId, chatId, config);
+        return HtmlService.createHtmlOutput("OK");
+      }
+      if (data.indexOf("ADM_MSG_") === 0 && chatId === config.ADMIN_CHAT_ID.toString()) {
+        var targetMsgId = data.replace("ADM_MSG_", "");
+        var kbMsgKlien  = {"inline_keyboard": [
+          [{"text": "💎 Perpanjang Sekarang", "callback_data": "SHORTCUT_BAYAR"}],
+          [{"text": "📞 Hubungi Admin",        "callback_data": "HUBUNGI_ADMIN"}]
+        ]};
+        kirimPesanSaaS(targetMsgId,
+          "🔔 *Pemberitahuan dari Admin Platform RHK*\n\n" +
+          "Yth. Bapak/Ibu, Admin ingin menginformasikan bahwa masa aktif langganan Anda " +
+          "akan segera berakhir atau telah berakhir.\n\n" +
+          "Silakan lakukan perpanjangan agar dapat melanjutkan pelaporan RHK Anda. 🙏",
+          kbMsgKlien, token);
+        kirimPesanSaaS(chatId, "✅ Pesan reminder berhasil dikirim ke `" + targetMsgId + "`.", null, config.BOT_TOKEN);
+        return HtmlService.createHtmlOutput("OK");
+      }
+
+      // ── CALLBACK ADMIN: Kirim ulang template ke klien ──────────────
+      if (data.indexOf("ADM_SEND_TPL_") === 0 && chatId === config.ADMIN_CHAT_ID.toString()) {
+        var targetTplId = data.replace("ADM_SEND_TPL_", "");
+        kirimTemplateKeKlien(targetTplId, chatId, config);
+        return HtmlService.createHtmlOutput("OK");
+      }
+
       if (data.indexOf("REG_JML_") === 0) {
         var jml = data.replace("REG_JML_", "");
         if (jml === "MANUAL") {
@@ -33,7 +123,11 @@ function doPost(e) {
       // PROTEKSI INTERAKTIF: Pengunci bypass tombol menu laporan
       else if (data.indexOf("RUN_RHK_") === 0 || data.indexOf("SET_TGL_") === 0 || data === "SaaS_PROSES_NOW") {
         if (klien.Status_Akses !== "AKTIF") {
-          kirimPesanSaaS(chatId, "🔒 *Akses Ditutup!* Silakan selesaikan pendaftaran dan aktivasi pembayaran akun premium Anda terlebih dahulu, Pak/Bu! 🥰", null, token);
+          var kbAksesBlokir = {"inline_keyboard": [
+            [{"text": "💎 Lihat Paket Langganan", "callback_data": "SHORTCUT_BAYAR"}],
+            [{"text": "📞 Hubungi Admin", "callback_data": "HUBUNGI_ADMIN"}]
+          ]};
+          kirimPesanSaaS(chatId, "🔒 *Akses Ditutup!* Silakan selesaikan pendaftaran dan aktivasi pembayaran akun premium Anda terlebih dahulu, Pak/Bu! 🥰", kbAksesBlokir, token);
           return HtmlService.createHtmlOutput("OK");
         }
         
@@ -127,13 +221,21 @@ function doPost(e) {
             if (keys[i].indexOf(chatId) === 0) props.deleteProperty(keys[i]); 
           }
           
-          kirimPesanSaaS(chatId, "✅ *Aksi Berhasil Dibatalkan!*\n\nSeluruh sesi isian Anda telah dibersihkan dari memori sistem. Silakan ketik perintah /lapor atau /bayar untuk memulai kembali dengan data yang baru.", null, token);
+          var kbSelesaiBatal = {"inline_keyboard": [
+            [{"text": "📋 Mulai Laporan RHK", "callback_data": "SHORTCUT_LAPOR"}],
+            [{"text": "💎 Info Paket Langganan", "callback_data": "SHORTCUT_BAYAR"}]
+          ]};
+          kirimPesanSaaS(chatId, "✅ *Aksi Berhasil Dibatalkan!*\n\nSeluruh sesi isian Anda telah dibersihkan dari memori sistem. Silakan pilih menu di bawah:", kbSelesaiBatal, token);
           return HtmlService.createHtmlOutput("OK");
         }
 
         // KUNCI SESI KETAT UNTUK PENGGUNA YANG MENCOBA PERINTAH /LAPOR SECARA ILEGAL
         if ((text === "/lapor" || text === "/start") && klien.Status_Akses !== "AKTIF" && klien.Status_Akses !== "BELUM_DAFTAR") {
-          kirimPesanSaaS(chatId, "🔒 *Akses Pelaporan Terkunci!* Bapak/Ibu mohon maaf, menu pelaporan belum dapat dibuka. Silakan selesaikan rangkaian registrasi administrasi dan pembayaran paket premium Anda terlebih dahulu ya Pak/Bu! 🥰", null, token);
+          var kbTerkunci = {"inline_keyboard": [
+            [{"text": "💎 Lihat Paket Langganan", "callback_data": "SHORTCUT_BAYAR"}],
+            [{"text": "📞 Hubungi Admin", "callback_data": "HUBUNGI_ADMIN"}]
+          ]};
+          kirimPesanSaaS(chatId, "🔒 *Akses Pelaporan Terkunci!* Bapak/Ibu mohon maaf, menu pelaporan belum dapat dibuka. Silakan selesaikan rangkaian registrasi administrasi dan pembayaran paket premium Anda terlebih dahulu ya Pak/Bu! 🥰", kbTerkunci, token);
           return HtmlService.createHtmlOutput("OK");
         }
         
