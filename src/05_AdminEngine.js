@@ -401,123 +401,6 @@ function prosesFiturAdminSaaS(update, config) {
 
 // ====================================================================
 // ENGINE PERINTAH DINAMIS DARI SHEET Admin_Commands
-// Tipe: BALAS_TEKS | BROADCAST | KIRIM_KE_USER
-// ====================================================================
-function eksekusiPerintahDariSheet(chatId, text, config) {
-  var acSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Admin_Commands");
-  if (!acSheet) return false;
-  var acData = acSheet.getDataRange().getValues();
-
-  for (var i = 1; i < acData.length; i++) {
-    var pSheet = acData[i][0] ? acData[i][0].toString().trim() : "";
-    if (!pSheet) continue;
-    var cocok = (text === pSheet) || (text.indexOf(pSheet + " ") === 0);
-    if (!cocok) continue;
-
-    var tipe      = (acData[i][1]||"").toString().trim().toUpperCase();
-    var isiPesan  = (acData[i][3]||"").toString();
-    var aktifFlag = (acData[i][4]||"").toString().toUpperCase();
-
-    if (aktifFlag !== "TRUE") {
-      kirimPesanSaaS(chatId,
-        "⚠️ Perintah `" + pSheet + "` sedang *dinonaktifkan*.", null, config.BOT_TOKEN);
-      return true;
-    }
-
-    if (tipe === "BALAS_TEKS") {
-      kirimPesanSaaS(chatId, isiPesan, null, config.BOT_TOKEN);
-      return true;
-    }
-    if (tipe === "BROADCAST") {
-      var cSht = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Client_SaaS");
-      var cDat = cSht.getDataRange().getValues();
-      var hit  = 0;
-      for (var bc = 1; bc < cDat.length; bc++) {
-        if (cDat[bc][3] === "AKTIF") {
-          kirimPesanSaaS(cDat[bc][0].toString(),
-            "📢 *PENGUMUMAN PLATFORM KINERJA RHK*\n\n" + isiPesan, null, config.BOT_TOKEN);
-          hit++; Utilities.sleep(100);
-        }
-      }
-      kirimPesanSaaS(chatId,
-        "🚀 Broadcast `" + pSheet + "` terkirim ke *" + hit + "* klien aktif.",
-        null, config.BOT_TOKEN);
-      return true;
-    }
-    if (tipe === "KIRIM_KE_USER") {
-      var bagian    = text.replace(pSheet, "").trim();
-      var targetUID = bagian !== "" ? bagian.split(" ")[0] : "";
-      if (!targetUID) {
-        kirimPesanSaaS(chatId,
-          "💡 Sertakan Chat ID setelah perintah.\nContoh: `" + pSheet + " 927597163`",
-          null, config.BOT_TOKEN);
-        return true;
-      }
-      var pFinal = isiPesan.replace(/\{chatId\}/g, targetUID);
-      kirimPesanSaaS(targetUID, pFinal, null, config.BOT_TOKEN);
-      kirimPesanSaaS(chatId,
-        "✅ Pesan `" + pSheet + "` terkirim ke `" + targetUID + "`.",
-        null, config.BOT_TOKEN);
-      return true;
-    }
-    kirimPesanSaaS(chatId,
-      "⚠️ Tipe `" + tipe + "` tidak dikenal. Gunakan: BALAS_TEKS | BROADCAST | KIRIM_KE_USER",
-      null, config.BOT_TOKEN);
-    return true;
-  }
-
-  // ── FITUR BARU: /admin bantuan ───────────────────────────────────
-  // Menampilkan semua perintah: hardcoded + perintah dari sheet Admin_Commands
-  if (text === "/admin bantuan") {
-    var bantuanTeks = "📖 *PANDUAN LENGKAP PERINTAH ADMIN* 📖\n\n" +
-      "━━━ *PERINTAH INTI (BAWAAN SISTEM)* ━━━\n" +
-      "▪️ `/admin` atau `/admin cek_sistem` — Dashboard statistik\n" +
-      "▪️ `/admin daftar_chatid` — Daftar semua Chat ID klien\n" +
-      "▪️ `/admin cek_pendaftaran` — Klien dengan registrasi macet\n" +
-      "▪️ `/admin bantuan` — Tampilkan panduan ini\n" +
-      "▪️ `/admin broadcast [pesan]` — Kirim pesan ke semua klien aktif\n" +
-      "▪️ `/admin blokir [ID] [alasan]` — Blokir akun klien\n" +
-      "▪️ `/admin aktifkan [ID]` — Aktifkan akun klien\n\n" +
-      "▪️ `/admin aktifkan [ID] [bulan]` — Aktifkan akun klien\n" +
-      "▪️ `/admin kirim_template [ID]` — Kirim ulang file template ke klien\n" +
-      "▪️ `/admin follow_up [ID]` — Info lengkap + deeplink WA klien\n" +
-      "▪️ `/admin follow_up_semua` — Daftar klien expired/hampir expired\n\n" +
-      "━━━ *PERINTAH DARI SHEET Admin_Commands* ━━━\n";
-
-    var acSheet2 = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Admin_Commands");
-    if (acSheet2) {
-      var acData2 = acSheet2.getDataRange().getValues();
-      var adaPerintahSheet = false;
-      for (var ac2 = 1; ac2 < acData2.length; ac2++) {
-        var aktifFlag = acData2[ac2][4] ? acData2[ac2][4].toString().toUpperCase() : "FALSE";
-        var labelAktif = (aktifFlag === "TRUE") ? "✅" : "❌";
-        bantuanTeks += labelAktif + " `" + acData2[ac2][0] + "`\n   _" + (acData2[ac2][5] || "Tanpa deskripsi") + "_\n";
-        adaPerintahSheet = true;
-      }
-      if (!adaPerintahSheet) bantuanTeks += "_Belum ada perintah di sheet Admin_Commands._\n";
-    } else {
-      bantuanTeks += "_Sheet Admin_Commands belum dibuat. Jalankan `setupStrukturDatabaseSaaS()` terlebih dahulu._\n";
-    }
-
-    bantuanTeks += "\n💡 *Tip:* Tambah perintah baru kapan saja langsung di sheet *Admin_Commands* tanpa mengubah kode!";
-    kirimPesanSaaS(chatId, bantuanTeks, null, config.BOT_TOKEN);
-    return true;
-  }
-
-  // ----------------------------------------------------------------
-  // ENGINE PERINTAH DINAMIS — Baca dari sheet Admin_Commands
-  // Eksekusi otomatis tanpa ubah kode, cukup tambah baris di sheet
-  // ----------------------------------------------------------------
-  var hasilSheet = eksekusiPerintahDariSheet(chatId, text, config);
-  if (hasilSheet) return true;
-
-  // Tidak ada perintah yang cocok → tampilkan petunjuk
-  kirimPesanSaaS(chatId, "❓ Perintah tidak dikenali.\n\nKetik `/admin bantuan` untuk melihat daftar lengkap perintah yang tersedia.", null, config.BOT_TOKEN);
-  return true;
-}
-
-// ====================================================================
-// ENGINE PERINTAH DINAMIS DARI SHEET Admin_Commands
 // ====================================================================
 // Cara kerja:
 //   1. Baca semua baris sheet Admin_Commands
@@ -526,6 +409,11 @@ function eksekusiPerintahDariSheet(chatId, text, config) {
 //      - BALAS_TEKS   : kirim Isi_Pesan ke admin
 //      - BROADCAST    : kirim Isi_Pesan ke semua klien AKTIF
 //      - KIRIM_KE_USER: kirim Isi_Pesan ke Chat ID yang disebut setelah perintah
+// ====================================================================
+// CATATAN: Sebelumnya fungsi ini terdefinisi DUA KALI di file ini. Versi
+// pertama (kini dihapus) memanggil dirinya sendiri di akhir → berpotensi
+// rekursi tak terbatas. Definisi ganda juga membingungkan. Disatukan ke
+// satu definisi bersih di bawah ini.
 // ====================================================================
 function eksekusiPerintahDariSheet(chatId, text, config) {
   var acSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Admin_Commands");
