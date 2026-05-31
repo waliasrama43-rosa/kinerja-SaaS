@@ -458,29 +458,36 @@ function jalankanWizardPendaftaran(chatId, text, state, token) {
 
       var linkDrive = "https://drive.google.com/drive/folders/" + driveId;
       perbaruiKolomKlien(chatId, "Folder_Root_ID", linkDrive);
-      perbaruiKolomKlien(chatId, "State_Sesi", "REG_TUNGGU_KONFIRMASI_WORD");
+      perbaruiKolomKlien(chatId, "State_Sesi", "");
 
       var klien   = cariAtauDaftarKlienSaaS(chatId, "");
       var sapaan  = getSapaan(klien.Nama_Pendaftar);
 
-      var kbKonfirmasi = {"inline_keyboard": [
-        [{"text": "✅ Sudah dikirim — Lanjutkan", "callback_data": "REG_WORD_SUDAH"}],
-        [tombolHubungiAdminWA()]
-      ]};
-
+      // Pesan sukses Drive + langsung tampilkan paket langganan
       kirimPesanEngine(chatId,
         "✅ *Koneksi Google Drive berhasil!*\n\n" +
+        "Halo *" + sapaan + "*, pendaftaran hampir selesai! 🎉\n\n" +
         "📌 *Penting:* Jangan mengubah nama atau menghapus folder tersebut " +
         "agar sistem dapat bekerja dengan baik.\n\n" +
         "━━━━━━━━━━━━━━━━━━━━\n" +
-        "📄 *Langkah Terakhir — Kirim Template*\n\n" +
-        "Sistem Kinerja RHK bekerja berdasarkan *template dokumen Word (.docx)* " +
-        "milik *" + sapaan + "*.\n\n" +
-        "Silakan kirimkan file *template laporan RHK (.docx)* langsung ke " +
-        "chat ini atau ke Admin, agar Admin dapat menyiapkan menu pelaporan khusus " +
-        "untuk *" + sapaan + "*.\n\n" +
-        "Apakah file template sudah dikirimkan?",
-        kbKonfirmasi, token);
+        "💎 *LANGKAH TERAKHIR — Pilih Paket Langganan*\n\n" +
+        "Pilih paket premium untuk mengaktifkan fitur pelaporan RHK otomatis:",
+        {"inline_keyboard": [
+          [{"text": "💎 Paket 1 Bulan  — Rp 10.000",  "callback_data": "ORDER_PAKET_1"}],
+          [{"text": "💎 Paket 3 Bulan  — Rp 30.000",  "callback_data": "ORDER_PAKET_3"}],
+          [{"text": "💎 Paket 6 Bulan  — Rp 50.000",  "callback_data": "ORDER_PAKET_6"}],
+          [{"text": "💎 Paket 12 Bulan — Rp 100.000", "callback_data": "ORDER_PAKET_12"}],
+          [tombolHubungiAdminWA()]
+        ]}, token);
+
+      // Notif ke admin: klien baru berhasil hubungkan Drive
+      var configNotif = ambilKonfigurasiSaaS();
+      kirimPesanSaaS(configNotif.ADMIN_CHAT_ID,
+        "🔔 *Klien Baru — Drive Terhubung*\n\n" +
+        "👤 *" + (klien.Nama_Pendaftar||"—") + "* (`" + chatId + "`)\n" +
+        "📂 Drive: " + linkDrive + "\n\n" +
+        "_Klien sedang memilih paket langganan._",
+        null, configNotif.BOT_TOKEN);
 
     } catch (erive) {
       var klienErr = cariAtauDaftarKlienSaaS(chatId, "");
@@ -2007,28 +2014,59 @@ function eksekusiApprovePembayaranKlien(callbackDataStr, config) {
           [{"text":"📋 Mulai Laporan RHK", "callback_data":"SHORTCUT_LAPOR"}]
         ]}, config.BOT_TOKEN);
     } else {
-      // Klien baru (belum ada RHK) → minta kirim template .docx
+      // Klien baru → approve + panduan upload template + info cara kerja
       perbaruiKolomKlien(targetId, "Status_Akses", "PENDING_RHK");
-      var kbTemplate = {"inline_keyboard": [
+      
+      // Buat sub-folder Template_RHK di Drive klien
+      var folderLinkNew = "";
+      try {
+        if (targetKlien.Folder_Root_ID) {
+          var matchFidNew = /[-\w]{25,}/.exec(targetKlien.Folder_Root_ID);
+          if (matchFidNew) {
+            var rootDriveNew = DriveApp.getFolderById(matchFidNew[0]);
+            var itTplNew = rootDriveNew.getFoldersByName("Template_RHK");
+            var folderTplNew = itTplNew.hasNext() ? itTplNew.next() : rootDriveNew.createFolder("Template_RHK");
+            folderLinkNew = folderTplNew.getUrl();
+          }
+        }
+      } catch (eFNew) {
+        _logSistem("WARN_FOLDER_TPL", targetId + " | " + eFNew.toString());
+      }
+
+      var kbAfterPay = {"inline_keyboard": [
         [{"text":"📄 Cara Kirim File Template", "callback_data":"PENDING_INFO_TEMPLATE"}],
         [tombolHubungiAdminWA()]
       ]};
+      
       kirimPesanSaaS(targetId,
-        "🎉 *Pembayaran Disetujui!*\n\n" +
-        "Halo *" + sapaan + "*, terima kasih! Akun premium aktif hingga *" + expStr + "*.\n\n" +
+        "🎉 *Pembayaran Diterima & Disetujui!*\n\n" +
+        "Halo *" + sapaan + "*, terima kasih! Pembayaran Anda telah diterima " +
+        "dan akun premium aktif hingga *" + expStr + "*.\n\n" +
+        "⏳ *Status:* Dalam proses pemeriksaan Admin untuk penyiapan menu RHK.\n\n" +
         "━━━━━━━━━━━━━━━━━━━━\n" +
-        "📄 *LANGKAH SELANJUTNYA:*\n\n" +
-        "Agar menu pelaporan RHK dapat disiapkan, kirimkan *file template laporan RHK (.docx)* " +
-        "langsung ke chat bot ini.\n\n" +
+        "📄 *PANDUAN UPLOAD TEMPLATE*\n\n" +
+        "Agar menu pelaporan RHK bisa disiapkan, kirimkan *file template " +
+        "laporan RHK (.docx)* langsung ke chat bot ini.\n\n" +
         "📌 *Yang perlu dikirim:*\n" +
-        "File Word (.docx) laporan harian yang biasa *" + sapaan + "* gunakan. " +
-        "Admin akan menganalisa strukturnya dan menyiapkan menu pelaporan otomatis.\n\n" +
-        (folderLink
-          ? "📂 Atau taruh file di folder berikut:\n`" + folderLink + "`\n\n"
+        "File Word (.docx) laporan harian yang biasa Anda gunakan. " +
+        "Admin akan menganalisa dan menyiapkan menu pelaporan otomatis.\n\n" +
+        (folderLinkNew 
+          ? "📂 Atau taruh langsung di folder:\n" + folderLinkNew + "\n\n" 
           : "") +
-        "⏳ Setelah file diterima, Admin akan mengkonfigurasi menu RHK dalam *1x24 jam*. " +
-        "Notifikasi otomatis dikirim begitu menu siap digunakan.",
-        kbTemplate, config.BOT_TOKEN);
+        "━━━━━━━━━━━━━━━━━━━━\n" +
+        "🤖 *CARA KERJA BOT KINERJA RHK*\n\n" +
+        "Setelah Admin menyiapkan menu, Anda tinggal:\n" +
+        "1️⃣ Ketik /lapor → pilih jenis RHK\n" +
+        "2️⃣ Pilih tanggal pelaksanaan\n" +
+        "3️⃣ Jawab beberapa pertanyaan singkat\n" +
+        "4️⃣ Kirim 2-4 foto bukti kegiatan\n" +
+        "5️⃣ Tekan *Cetak PDF* → laporan langsung jadi!\n\n" +
+        "📁 Hasil PDF otomatis tersimpan di Google Drive Anda.\n" +
+        "⏱️ Proses cetak hanya *30 detik* per laporan!\n\n" +
+        "━━━━━━━━━━━━━━━━━━━━\n" +
+        "⏳ Admin akan menyelesaikan konfigurasi dalam *1x24 jam*. " +
+        "Notifikasi otomatis dikirim begitu menu siap. 🙏",
+        kbAfterPay, config.BOT_TOKEN);
     }
   }
   _logSistem("APPROVE", targetId + " | " + jmlBulan + " bln");
@@ -2826,16 +2864,30 @@ function _prosesCallbackRingan(cbChatId, cbData, cbKlien, update, config, token)
   }
 
   if (cbData === "REG_WORD_SUDAH") {
-    perbaruiKolomKlien(cbChatId, "Status_Akses", "REG_WIZARD");
-    perbaruiKolomKlien(cbChatId, "State_Sesi",   "");
-    kirimPesanSaaS(cbChatId,
-      "✅ *Pendaftaran awal selesai!*\n\n" +
-      "Admin akan segera memverifikasi dan menyiapkan menu RHK.\n\n" +
-      "Jika belum mengirim file template .docx, kirimkan sekarang ke chat ini.",
-      {"inline_keyboard": [
-        [{"text":"📄 Cara Kirim File Template", "callback_data":"PENDING_INFO_TEMPLATE"}],
-        [tombolHubungiAdminWA()]
-      ]}, token);
+    // Legacy handler - redirect ke pilih paket jika belum bayar
+    if (cbKlien.Status_Akses !== "AKTIF" && cbKlien.Status_Akses !== "PENDING_RHK") {
+      perbaruiKolomKlien(cbChatId, "State_Sesi", "");
+      kirimPesanSaaS(cbChatId,
+        "✅ *Terima kasih!*\n\n" +
+        "Untuk mengaktifkan layanan, silakan pilih paket langganan terlebih dahulu:",
+        {"inline_keyboard": [
+          [{"text": "💎 Paket 1 Bulan  — Rp 10.000",  "callback_data": "ORDER_PAKET_1"}],
+          [{"text": "💎 Paket 3 Bulan  — Rp 30.000",  "callback_data": "ORDER_PAKET_3"}],
+          [{"text": "💎 Paket 6 Bulan  — Rp 50.000",  "callback_data": "ORDER_PAKET_6"}],
+          [{"text": "💎 Paket 12 Bulan — Rp 100.000", "callback_data": "ORDER_PAKET_12"}]
+        ]}, token);
+    } else {
+      perbaruiKolomKlien(cbChatId, "Status_Akses", "PENDING_RHK");
+      perbaruiKolomKlien(cbChatId, "State_Sesi",   "");
+      kirimPesanSaaS(cbChatId,
+        "✅ *Pendaftaran awal selesai!*\n\n" +
+        "Admin akan segera memverifikasi dan menyiapkan menu RHK.\n\n" +
+        "Jika belum mengirim file template .docx, kirimkan sekarang ke chat ini.",
+        {"inline_keyboard": [
+          [{"text":"📄 Cara Kirim File Template", "callback_data":"PENDING_INFO_TEMPLATE"}],
+          [tombolHubungiAdminWA()]
+        ]}, token);
+    }
     return HtmlService.createHtmlOutput("OK");
   }
 
