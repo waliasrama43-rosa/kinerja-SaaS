@@ -340,6 +340,30 @@ function perbaruiKolomKlien(chatId, namaKolom, nilaiBaru) {
   }
 }
 
+// ── Batch update: tulis beberapa kolom sekaligus (1 lock, 1 flush) ──
+function perbaruiMultiKolom(chatId, updates) {
+  var lock = LockService.getScriptLock();
+  try { lock.waitLock(10000); } catch (eLock) {}
+  try {
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Client_SaaS");
+    var data  = sheet.getDataRange().getValues();
+    for (var i = 1; i < data.length; i++) {
+      if (data[i][0].toString() === chatId.toString()) {
+        for (var key in updates) {
+          var colIndex = data[0].indexOf(key);
+          if (colIndex !== -1) {
+            sheet.getRange(i + 1, colIndex + 1).setValue(updates[key]);
+          }
+        }
+        SpreadsheetApp.flush();
+        break;
+      }
+    }
+  } finally {
+    try { lock.releaseLock(); } catch (eRel) {}
+  }
+}
+
 // ── Ambil semua klien berdasarkan status ("*" = semua) ─────────────
 function cariSemuaKlienByStatus(statusTarget) {
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Client_SaaS");
@@ -1937,9 +1961,11 @@ function eksekusiApprovePembayaranKlien(callbackDataStr, config) {
   }
   expBaru.setMonth(expBaru.getMonth() + jmlBulan);
 
-  perbaruiKolomKlien(targetId, "Status_Akses",  "AKTIF");
-  perbaruiKolomKlien(targetId, "Masa_Aktif",    expBaru);
-  perbaruiKolomKlien(targetId, "Warning_Sent",  "");
+  perbaruiMultiKolom(targetId, {
+    "Status_Akses": "AKTIF",
+    "Masa_Aktif": expBaru,
+    "Warning_Sent": ""
+  });
 
   var props = PropertiesService.getScriptProperties();
   // Baca nilai pending SEBELUM dihapus → untuk pencatatan transaksi LUNAS
@@ -2434,11 +2460,14 @@ function doPost(e) {
             "PDF akan dikirimkan dalam beberapa saat. ⏳",
             null, token);
         } else {
-          // Fallback: proses langsung jika antrian gagal
-          perbaruiKolomKlien(cbChatId, "State_Sesi", "PROSES_PDF");
+          // Fallback RINGAN: beri tahu klien untuk coba lagi
           kirimPesanSaaS(cbChatId,
-            "⏳ *Merakit laporan PDF...* Mohon tunggu sebentar.", null, token);
-          cetakBerkasLaporanPremiumSaaS(cbChatId, config);
+            "⏳ *Sistem sedang sibuk.*\n\n" +
+            "Permintaan cetak PDF akan diproses dalam beberapa saat. " +
+            "Tekan tombol di bawah untuk mencoba lagi:",
+            {"inline_keyboard": [
+              [{"text":"🔄 Coba Cetak Lagi", "callback_data":"RETRY_CETAK_NOW"}]
+            ]}, token);
         }
         return HtmlService.createHtmlOutput("OK");
       }
@@ -2471,8 +2500,20 @@ function doPost(e) {
               "Admin akan menerima notifikasi dalam beberapa saat. ⏳",
               null, token);
           } else {
-            // Fallback langsung
-            prosesUnduhTemplateWordKlien(msgChatId, update.message.document, config);
+            // Fallback RINGAN: konfirmasi ke klien, forward info ke admin
+            kirimPesanSaaS(msgChatId,
+              "📥 *File template diterima!*\n\n" +
+              "File sedang dikirim ke Admin untuk diproses. ⏳",
+              null, token);
+            // Forward dokumen ke admin
+            UrlFetchApp.fetch("https://api.telegram.org/bot" + token + "/sendDocument",
+              {"method":"post","payload":{
+                "chat_id": config.ADMIN_CHAT_ID.toString(),
+                "document": update.message.document.file_id,
+                "caption": "📄 *Template dari klien*\n`" + msgChatId + "` — " +
+                  update.message.document.file_name + "\n_Antrian penuh, forward langsung._",
+                "parse_mode": "Markdown"
+              }, "muteHttpExceptions": true});
           }
         } else {
           // Bukan .docx → tolak langsung (ringan)
@@ -2513,8 +2554,34 @@ function _prosesPhotoBerat(chatId, klien, update, config, token) {
         "Hasilnya akan dikirimkan dalam beberapa saat. ⏳",
         null, token);
     } else {
-      // Fallback langsung
-      terimaFotoBuktiTransferKlien(chatId, update.message.photo, config);
+      // Fallback RINGAN: forward foto ke admin tanpa OCR (anti-timeout)
+      var fileIdBukti = update.message.photo[update.message.photo.length - 1].file_id;
+      var klienInfo = cariAtauDaftarKlienSaaS(chatId, "");
+      var pendingBulan = PropertiesService.getScriptProperties().getProperty("pending_bulan_" + chatId) || "1";
+      var pendingTotal = PropertiesService.getScriptProperties().getProperty("pending_total_" + chatId) || "0";
+      perbaruiKolomKlien(chatId, "State_Sesi", "");
+      // Kirim konfirmasi ke klien
+      kirimPesanSaaS(chatId,
+        "✅ *Bukti pembayaran diterima!*\n\n" +
+        "Admin sedang memverifikasi. Akun akan aktif setelah konfirmasi. 🙏",
+        null, token);
+      // Forward foto ke admin + tombol approve/reject
+      var kbAdmFb = {"inline_keyboard": [
+        [{"text":"✅ Setujui & Aktifkan","callback_data":"ADM_APP_" + chatId + "_" + pendingBulan}],
+        [{"text":"❌ Tolak Transfer",    "callback_data":"ADM_REJ_" + chatId}]
+      ]};
+      UrlFetchApp.fetch("https://api.telegram.org/bot" + token + "/sendPhoto",
+        {"method":"post","payload":{
+          "chat_id": config.ADMIN_CHAT_ID.toString(),
+          "photo": fileIdBukti,
+          "caption": "🔔 *BUKTI BAYAR (Antrian Penuh)*\n\n" +
+            "👤 *" + (klienInfo.Nama_Pendaftar||"—") + "* (`" + chatId + "`)\n" +
+            "▪️ Paket: *" + pendingBulan + " Bulan*\n" +
+            "▪️ Nominal: *Rp " + parseInt(pendingTotal).toLocaleString("id-ID") + "*\n\n" +
+            "⚠️ OCR tidak tersedia. Cek mutasi manual lalu pilih aksi:",
+          "parse_mode": "Markdown",
+          "reply_markup": JSON.stringify(kbAdmFb)
+        }, "muteHttpExceptions": true});
     }
     return HtmlService.createHtmlOutput("OK");
   }
@@ -2528,7 +2595,29 @@ function _prosesPhotoBerat(chatId, klien, update, config, token) {
         "📸 *Foto diterima!* Sedang disimpan ke sistem...",
         null, token);
     } else {
-      terimaFotoLaporanKegiatanKlien(chatId, update.message.photo, config);
+      // Fallback RINGAN: simpan file_id saja, proses nanti
+      var klienFoto = cariAtauDaftarKlienSaaS(chatId, "");
+      var countFb = parseInt(klienFoto.Foto_Count || "0") + 1;
+      if (countFb <= 4) {
+        perbaruiKolomKlien(chatId, "Foto_Count", countFb);
+        PropertiesService.getScriptProperties()
+          .setProperty("sess_" + chatId + "_foto_" + countFb,
+                       update.message.photo[update.message.photo.length-1].file_id);
+        if (countFb < 2) {
+          kirimPesanSaaS(chatId,
+            "📸 Foto ke-" + countFb + " tersimpan! Kirimkan foto berikutnya:",
+            null, token);
+        } else {
+          kirimPesanSaaS(chatId,
+            "✅ *" + countFb + " foto* tersimpan.",
+            {"inline_keyboard": [
+              [{"text":"📷 Tambah Foto (" + countFb + "/4)", "callback_data":"SaaS_PROSES_FOTO_LAGI"}],
+              [{"text":"🚀 Rakit Jadi PDF Sekarang!", "callback_data":"SaaS_PROSES_NOW"}]
+            ]}, token);
+        }
+      } else {
+        kirimPesanSaaS(chatId, "🛑 Maksimal *4 foto* per laporan.", null, token);
+      }
     }
     return HtmlService.createHtmlOutput("OK");
   }
