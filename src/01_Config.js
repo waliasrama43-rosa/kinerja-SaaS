@@ -2,6 +2,9 @@
 // FILE 01: PUSAT KONFIGURASI GLOBAL & UTILITAS UTAMA (REVISI V4)
 // ====================================================================
 
+// ✅ OPTIMIZED: Global cache untuk config (instant memory access)
+var _CONFIG_CACHE_ = null;
+
 const SAAS_CONFIG = {
   ADMIN_TELEGRAM    : "@Septian_DK",
   ADMIN_WHATSAPP_NO : "6285100062524",   // Nomor WA admin tanpa tanda +
@@ -76,12 +79,47 @@ function tombolHubungiAdminWA() {
 // ====================================================================
 // SETUP: Buat/inisialisasi semua sheet database
 // ====================================================================
+
+// ✅ OPTIMIZED: Cache config dengan 3-tier strategy (memory → cache → sheet)
 function ambilKonfigurasiSaaS() {
+  var cache = CacheService.getScriptCache();
+  var cacheKey = "config_saas_main";
+  
+  // Tier 1: Memory cache (tercepat - instant)
+  if (_CONFIG_CACHE_) {
+    Logger.log("✅ CONFIG: Memory cache hit");
+    return _CONFIG_CACHE_;
+  }
+  
+  // Tier 2: CacheService (1ms - Google-managed cache)
+  var cached = cache.get(cacheKey);
+  if (cached) {
+    Logger.log("✅ CONFIG: CacheService hit");
+    _CONFIG_CACHE_ = JSON.parse(cached);
+    return _CONFIG_CACHE_;
+  }
+  
+  // Tier 3: Sheet read (fallback - first load atau cache expired)
+  Logger.log("📡 CONFIG: Sheet read (cache miss)");
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Pengaturan");
   var data  = sheet.getDataRange().getValues();
   var config = {};
-  for (var i = 1; i < data.length; i++) { config[data[i][0]] = data[i][1]; }
+  for (var i = 1; i < data.length; i++) { 
+    if (data[i][0]) config[data[i][0]] = data[i][1]; 
+  }
+  
+  // Store di memory + cache untuk 1 jam (3600 detik)
+  _CONFIG_CACHE_ = config;
+  cache.put(cacheKey, JSON.stringify(config), 3600);
+  
   return config;
+}
+
+// ✅ OPTIMIZED: Invalidate config cache (call ini saat admin edit Pengaturan)
+function invalidateConfigCache() {
+  _CONFIG_CACHE_ = null;
+  CacheService.getScriptCache().remove("config_saas_main");
+  Logger.log("🔄 Config cache invalidated");
 }
 
 function setupStrukturDatabaseSaaS() {
@@ -224,6 +262,29 @@ function setupStrukturDatabaseSaaS() {
 // ====================================================================
 // UTILITAS PENGIRIMAN PESAN
 // ====================================================================
+
+// ✅ OPTIMIZED: Cache hasil formatDate untuk avoid repeated timezone conversion
+var _DATE_FORMAT_CACHE_ = {};
+
+function formatDateCached(date, timezone, format) {
+  var dateStr = date.toString();
+  var cacheKey = dateStr + "_" + format;
+  
+  if (_DATE_FORMAT_CACHE_[cacheKey]) {
+    return _DATE_FORMAT_CACHE_[cacheKey];
+  }
+  
+  var result = Utilities.formatDate(date, timezone, format);
+  _DATE_FORMAT_CACHE_[cacheKey] = result;
+  
+  // Keep cache size small (max 100 entries)
+  if (Object.keys(_DATE_FORMAT_CACHE_).length > 100) {
+    _DATE_FORMAT_CACHE_ = {};  // Reset
+  }
+  
+  return result;
+}
+
 function kirimPesanSaaS(chatId, text, kb, token) {
   var p = {
     "chat_id"                  : chatId,
@@ -232,22 +293,33 @@ function kirimPesanSaaS(chatId, text, kb, token) {
     "disable_web_page_preview" : true
   };
   if (kb) p.reply_markup = JSON.stringify(kb);
+  
   return UrlFetchApp.fetch(
     "https://api.telegram.org/bot" + token + "/sendMessage",
-    {"method": "post", "contentType": "application/json",
-     "payload": JSON.stringify(p), "muteHttpExceptions": true}
+    {
+      "method": "post", 
+      "contentType": "application/json",
+      "payload": JSON.stringify(p), 
+      "muteHttpExceptions": true,
+      "timeout": 10  // ✅ OPTIMIZED: Add timeout (default 60s is too long)
+    }
   );
 }
 
 function kirimDokumenSaaS(chatId, blob, caption, token) {
   return UrlFetchApp.fetch(
     "https://api.telegram.org/bot" + token + "/sendDocument",
-    {"method": "post", "payload": {
-      "chat_id"    : chatId.toString(),
-      "document"   : blob,
-      "caption"    : caption,
-      "parse_mode" : "Markdown"
-    }, "muteHttpExceptions": true}
+    {
+      "method": "post", 
+      "payload": {
+        "chat_id"    : chatId.toString(),
+        "document"   : blob,
+        "caption"    : caption,
+        "parse_mode" : "Markdown"
+      }, 
+      "muteHttpExceptions": true,
+      "timeout": 30  // ✅ OPTIMIZED: Longer timeout for document upload
+    }
   );
 }
 

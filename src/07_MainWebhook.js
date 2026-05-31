@@ -19,7 +19,51 @@
 //
 // ====================================================================
 
+// ✅ OPTIMIZED: Performance monitoring untuk webhook
+var _PERF_LOG_ = [];
+var _PERF_THRESHOLD_MS_ = 500;  // Alert jika > 500ms
+
+function _logPerforma(label, durasiMs) {
+  var msg = "⏱️ " + label + ": " + durasiMs + "ms";
+  Logger.log(msg);
+  
+  // Track untuk analytics
+  _PERF_LOG_.push({timestamp: new Date(), label: label, duration: durasiMs});
+  
+  // Alert jika slow
+  if (durasiMs > _PERF_THRESHOLD_MS_) {
+    Logger.log("⚠️ SLOW: " + label + " exceeded threshold (" + durasiMs + "ms > " + _PERF_THRESHOLD_MS_ + "ms)");
+  }
+  
+  // Keep log size manageable
+  if (_PERF_LOG_.length > 100) {
+    _PERF_LOG_ = _PERF_LOG_.slice(-50);
+  }
+}
+
+function getPerformaStats() {
+  if (_PERF_LOG_.length === 0) return "No data yet";
+  
+  var total = 0, min = Infinity, max = 0;
+  for (var i = 0; i < _PERF_LOG_.length; i++) {
+    var dur = _PERF_LOG_[i].duration;
+    total += dur;
+    min = Math.min(min, dur);
+    max = Math.max(max, dur);
+  }
+  
+  return {
+    count: _PERF_LOG_.length,
+    average: (total / _PERF_LOG_.length).toFixed(0),
+    min: min,
+    max: max,
+    last10: _PERF_LOG_.slice(-10)
+  };
+}
+
 function doPost(e) {
+  var webhookStart = new Date().getTime();
+  
   try {
     // ── KEAMANAN: validasi secret webhook ──────────────────────────
     // Apps Script doPost TIDAK menerima header HTTP, jadi secret dikirim
@@ -134,7 +178,13 @@ function doPost(e) {
   } catch (err) {
     var logSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Log_Sistem");
     if (logSheet) logSheet.appendRow([new Date(), "CRITICAL_DOPOST", err.toString()]);
+    Logger.log("❌ ERROR in doPost: " + err.toString());
   }
+  
+  // ✅ OPTIMIZED: Log webhook performance at the end
+  var webhookDuration = new Date().getTime() - webhookStart;
+  _logPerforma("webhook_total", webhookDuration);
+  
   return HtmlService.createHtmlOutput("OK");
 }
 

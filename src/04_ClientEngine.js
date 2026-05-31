@@ -85,7 +85,7 @@ function prosesFiturKlienSaaS(update, config, token) {
         kirimPesanSaaS(chatId,
           "⏰ *Masa aktif akun " + sapaan + " telah berakhir.*\n\n" +
           "Berakhir pada: *" +
-          Utilities.formatDate(new Date(klien.Masa_Aktif), "GMT+7", "dd/MM/yyyy") + "*\n\n" +
+          formatDateCached(new Date(klien.Masa_Aktif), "GMT+7", "dd/MM/yyyy") + "*\n\n" +
           "Lakukan perpanjangan untuk melanjutkan pelaporan RHK. " +
           "Semua data & template tetap tersimpan. 💎",
           kbExpired, token);
@@ -113,8 +113,11 @@ function prosesFiturKlienSaaS(update, config, token) {
         if (k.indexOf("sess_" + chatId + "_") === 0) props.deleteProperty(k);
       }
 
-      perbaruiKolomKlien(chatId, "State_Sesi", "PILIH_RHK");
-      perbaruiKolomKlien(chatId, "Foto_Count", 0);
+      // ✅ OPTIMIZED: Batch update state + foto count (1 lock + 1 flush)
+      perbaruiMultiKolom(chatId, {
+        "State_Sesi": "PILIH_RHK",
+        "Foto_Count": 0
+      });
       tampilkanMenuRHKKlien(chatId, token);
       return;
     }
@@ -368,27 +371,12 @@ function pindahKePertanyaanBerikutnya(chatId, token) {
     perbaruiKolomKlien(chatId, "State_Sesi", "TUNGGU_TAG_" + tagSekarang);
     props.setProperty("sess_" + chatId + "_current_tag_idx", (idx + 1).toString());
 
-    // ── Cari pertanyaan di Kamus_Placeholder ────────────────────────
-    // Jika tag TIDAK ADA di kamus → bot tetap tanya dengan format
-    // otomatis yang rapi berdasarkan nama tag itu sendiri.
-    // Admin tidak perlu mendaftarkan semua tag terlebih dahulu.
-    var kamusSheet   = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Kamus_Placeholder");
-    var kData        = kamusSheet.getDataRange().getValues();
-    var kalimatTanya = null;   // null = belum ditemukan di kamus
-
-    for (var i = 1; i < kData.length; i++) {
-      if (kData[i][0].toString().toUpperCase() === tagSekarang.toUpperCase()) {
-        kalimatTanya = kData[i][1];
-        break;
-      }
-    }
+    // ── ✅ OPTIMIZED: Cari pertanyaan dari Kamus cache (in-memory) ────────────
+    var kamus = ambilKamusPlaceholderSAFE();
+    var kalimatTanya = kamus[tagSekarang.toUpperCase()];
 
     // Fallback otomatis jika tag tidak ada di kamus:
-    // Bot TETAP bertanya (pakai kalimat otomatis dari nama tag), DAN
-    // tag langsung ditambahkan ke Kamus_Placeholder (swa-pulih) sehingga
-    // admin tak perlu khawatir lupa mendaftarkannya. Admin diberi tahu
-    // SEKALI saat tag benar-benar baru.
-    if (kalimatTanya === null) {
+    if (!kalimatTanya) {
       kalimatTanya = "Silakan isi *" + _tagKeLabel(tagSekarang) + "* untuk laporan ini:";
       try {
         var ditambah = sinkronkanKamusDariTag([tagSekarang]);
