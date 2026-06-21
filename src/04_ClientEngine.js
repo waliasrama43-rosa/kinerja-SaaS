@@ -12,6 +12,9 @@ function prosesFiturKlienSaaS(update, config, token) {
     update.message ? update.message.from.first_name : ""
   );
   var sapaan  = getSapaan(klien.Nama_Pendaftar);
+  // Defensif: State_Sesi selalu diperlakukan sebagai string agar
+  // pemanggilan .indexOf() tidak melempar error bila sel bertipe lain.
+  var stateSesi = (klien.State_Sesi == null ? "" : klien.State_Sesi).toString();
 
   if (update.message && update.message.text) {
     var text = update.message.text.trim();
@@ -128,7 +131,7 @@ function prosesFiturKlienSaaS(update, config, token) {
     }
 
     // ── 2. SESI INPUT TANGGAL MANUAL ──────────────────────────────
-    if (klien.State_Sesi === "TUNGGU_TGL_MANUAL") {
+    if (stateSesi === "TUNGGU_TGL_MANUAL") {
       var polaTgl = /^(\d{2})\/(\d{2})\/(\d{4})$/;
       if (polaTgl.test(text)) {
         var parts = text.split("/");
@@ -152,8 +155,8 @@ function prosesFiturKlienSaaS(update, config, token) {
     }
 
     // ── 3. SESI KUESIONER PERTANYAAN ──────────────────────────────
-    if (klien.State_Sesi.indexOf("TUNGGU_TAG_") === 0) {
-      var tagAktif = klien.State_Sesi.replace("TUNGGU_TAG_", "");
+    if (stateSesi.indexOf("TUNGGU_TAG_") === 0) {
+      var tagAktif = stateSesi.replace("TUNGGU_TAG_", "");
       PropertiesService.getScriptProperties()
         .setProperty("sess_" + chatId + "_ans_" + tagAktif, text);
       pindahKePertanyaanBerikutnya(chatId, token);
@@ -161,7 +164,7 @@ function prosesFiturKlienSaaS(update, config, token) {
     }
 
     // ── 4. FALLBACK — perintah tidak dikenal ──────────────────────
-    if (klien.State_Sesi === "") {
+    if (stateSesi === "") {
       // Notif senyap ke admin
       var configFb = ambilKonfigurasiSaaS();
       kirimPesanSaaS(configFb.ADMIN_CHAT_ID,

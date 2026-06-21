@@ -72,6 +72,17 @@ function doPost(e) {
     var _sp = PropertiesService.getScriptProperties();
     var _secret = _sp.getProperty("WEBHOOK_SECRET");
     if (_secret && (!e || !e.parameter || e.parameter.s !== _secret)) {
+      // PENTING (penyebab umum "bot diam"): WEBHOOK_SECRET sudah diset di
+      // Script Properties, TAPI URL webhook di Telegram tidak menyertakan
+      // "?s=<secret>" (mis. webhook dipasang manual dari browser/BotFather).
+      // Akibatnya SEMUA update dibuang diam-diam. Kita catat ke Log_Sistem
+      // agar mudah didiagnosis, lalu sarankan jalankan pasangWebhookOtomatis().
+      try {
+        var _lsSec = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Log_Sistem");
+        if (_lsSec) _lsSec.appendRow([new Date(), "WEBHOOK_SECRET_MISMATCH",
+          "Update ditolak: query 's' tidak cocok dgn WEBHOOK_SECRET. " +
+          "Jalankan pasangWebhookOtomatis() agar webhook menyertakan ?s=<secret>."]);
+      } catch (eSecLog) { /* abaikan */ }
       return HtmlService.createHtmlOutput("OK");
     }
 
@@ -225,8 +236,18 @@ function _prosesPhotoBerat(chatId, klien, update, config, token) {
     return HtmlService.createHtmlOutput("OK");
   }
 
-  // Foto di luar konteks yang diharapkan → abaikan / fallback ke engine klien
-  prosesFiturKlienSaaS(update, config, token);
+  // Foto di luar konteks yang diharapkan → beri arahan (jangan diam).
+  // prosesFiturKlienSaaS() hanya menangani teks, jadi foto tanpa sesi aktif
+  // sebelumnya tidak mendapat respon sama sekali. Sekarang dibalas arahan.
+  kirimPesanSaaS(chatId,
+    "📷 *Foto diterima, tetapi belum ada proses yang menunggu foto.*\n\n" +
+    "Untuk melampirkan foto kegiatan, mulai dulu pelaporan lewat /lapor " +
+    "dan ikuti langkahnya sampai diminta mengirim foto.\n\n" +
+    "Jika ini bukti pembayaran, buat invoice dulu lewat /bayar.",
+    {"inline_keyboard": [
+      [{"text":"📋 Mulai Laporan RHK",   "callback_data":"SHORTCUT_LAPOR"}],
+      [{"text":"💎 Info Paket Langganan", "callback_data":"SHORTCUT_BAYAR"}]
+    ]}, token);
   return HtmlService.createHtmlOutput("OK");
 }
 
@@ -235,6 +256,10 @@ function _prosesPhotoBerat(chatId, klien, update, config, token) {
 // ====================================================================
 function _prosesTeksRingan(chatId, klien, update, config, token) {
   var text = update.message.text.trim();
+  // Defensif: pastikan State_Sesi selalu string. Bila sel sheet berisi
+  // tipe lain (angka/Date karena auto-format), pemanggilan .indexOf() bisa
+  // melempar error → doPost gagal diam-diam → "bot tidak merespon".
+  var stateSesi = (klien.State_Sesi == null ? "" : klien.State_Sesi).toString();
 
   // /batal — bersihkan sesi
   if (text.toLowerCase() === "/batal") {
@@ -274,8 +299,8 @@ function _prosesTeksRingan(chatId, klien, update, config, token) {
   }
 
   // Wizard pendaftaran
-  if (klien.State_Sesi.indexOf("REG_") === 0) {
-    jalankanWizardPendaftaran(chatId, text, klien.State_Sesi, token);
+  if (stateSesi.indexOf("REG_") === 0) {
+    jalankanWizardPendaftaran(chatId, text, stateSesi, token);
     return HtmlService.createHtmlOutput("OK");
   }
 
@@ -309,7 +334,7 @@ function _prosesCallbackRingan(cbChatId, cbData, cbKlien, update, config, token)
   }
 
   if (cbData === "REG_LANJUT") {
-    var sesiLanjut = cbKlien.State_Sesi || "";
+    var sesiLanjut = (cbKlien.State_Sesi == null ? "" : cbKlien.State_Sesi).toString();
     if (sesiLanjut.indexOf("REG_") === 0) {
       jalankanWizardPendaftaran(cbChatId, "", sesiLanjut, token);
     } else {
